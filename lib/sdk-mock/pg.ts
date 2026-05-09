@@ -29,12 +29,16 @@ function resolveCartridgesRoot(): string {
   if (process.env.STUDIO_CARTRIDGES_PATH) {
     return resolve(STUDIO_ROOT, process.env.STUDIO_CARTRIDGES_PATH)
   }
+  const local = join(STUDIO_ROOT, 'cartridges')
+  if (existsSync(local)) return local
   const parent = resolve(STUDIO_ROOT, '..', 'cartridges')
   if (existsSync(parent)) return parent
   return join(STUDIO_ROOT, 'workspace')
 }
 
-async function applySchemas(db: PGlite) {
+const isVercel = !!process.env.VERCEL
+
+async function applySchemas(db: PGlite, seedSampleData = false) {
   // ベーススキーマ
   if (existsSync(BASE_SQL)) {
     const sql = readFileSync(BASE_SQL, 'utf-8')
@@ -73,31 +77,50 @@ async function applySchemas(db: PGlite) {
     } catch (e) {
       console.warn(`[studio-pg] カートリッジ ${name} のスキーマ適用で警告:`, e instanceof Error ? e.message : e)
     }
+
+    if (seedSampleData) {
+      const samplePath = join(dir, 'db', 'sample-data.sql')
+      if (existsSync(samplePath)) {
+        try {
+          await db.exec(readFileSync(samplePath, 'utf-8'))
+          console.log(`[studio-pg] カートリッジ ${name} のサンプルデータを適用しました`)
+        } catch (e) {
+          console.warn(`[studio-pg] カートリッジ ${name} のサンプルデータ適用で警告:`, e instanceof Error ? e.message : e)
+        }
+      }
+    }
   }
 }
 
 function init(): DbHandle {
-  // PGlite を起動して可能ならファイル永続化、ダメなら in-memory fallback。
-  // Windows でも 0.4 系 PGlite は forward slash パスを受け取る。
-  // バックスラッシュは不可なので変換が必要。
   let db: PGlite
   let mode = 'unknown'
-  try {
-    mkdirSync(DB_DIR, { recursive: true })
-    // process.platform を問わず forward slash 形式に揃える
-    const dataPath = DB_DIR.replace(/\\/g, '/')
-    console.log('[studio-pg] ファイル永続化を試行 →', dataPath)
-    db = new PGlite({ dataDir: dataPath })
-    mode = 'fs (' + process.platform + ')'
-  } catch (e) {
-    console.warn('[studio-pg] ファイル永続化失敗 → in-memory に fallback:', e instanceof Error ? e.message : e)
+
+  if (isVercel) {
+    // Vercel: サーバーレスは読み取り専用FS → 最初から in-memory
+    console.log('[studio-pg] Vercel 環境検出 → in-memory + サンプルデータ自動投入')
     db = new PGlite()
-    mode = 'in-memory (再起動で消失)'
+    mode = 'in-memory (Vercel)'
+  } else {
+    // ローカル: ファイル永続化を試行
+    try {
+      mkdirSync(DB_DIR, { recursive: true })
+      const dataPath = DB_DIR.replace(/\\/g, '/')
+      console.log('[studio-pg] ファイル永続化を試行 →', dataPath)
+      db = new PGlite({ dataDir: dataPath })
+      mode = 'fs (' + process.platform + ')'
+    } catch (e) {
+      console.warn('[studio-pg] ファイル永続化失敗 → in-memory に fallback:', e instanceof Error ? e.message : e)
+      db = new PGlite()
+      mode = 'in-memory (再起動で消失)'
+    }
   }
+
+  const seedSample = isVercel || mode.startsWith('in-memory')
   const ready = (async () => {
     try {
       await db.waitReady
-      await applySchemas(db)
+      await applySchemas(db, seedSample)
       console.log('[studio-pg] ready (mode:', mode, ')')
     } catch (e) {
       console.error('[studio-pg] init エラー:', e)
@@ -105,7 +128,7 @@ function init(): DbHandle {
         console.warn('[studio-pg] 永続化 DB 異常 → in-memory で再構築')
         db = new PGlite()
         await db.waitReady
-        await applySchemas(db)
+        await applySchemas(db, true)
         mode = 'in-memory (永続化失敗)'
       }
     }
