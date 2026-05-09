@@ -1,0 +1,85 @@
+{
+  "$schema": "https://appharbor.app/cartridge-schema-v1.json",
+  "spec_version": "1",
+  "id": "patrol-navi",
+  "version": "2.6.0",
+  "name": "PatrolNavi",
+  "description": "安全パトロール管理アプリ。チェックリストと承認ワークフローをカスタマイズして現場の安全確認を効率化します。",
+  "icon": "🛡️",
+  "category": "業務",
+  "author": {
+    "name": "AppHarbor",
+    "email": "info@appharbor.app"
+  },
+  "appharbor": {
+    "sdkVersion": "^1.0",
+    "minPlatformVersion": "0.5.0"
+  },
+  "studioCompatible": true,
+  "studioCompatibleNote": "v2.0.0 で完全カートリッジ化（_ui / _types を内製）。Studio Phase 2 (createBrowserSupabase + chain methods 拡充) に依存。",
+  "permissions": [
+    {
+      "id": "viewer",
+      "label": "閲覧者",
+      "default": true,
+      "description": "アプリへのアクセス。パトロール作成・閲覧・自分のステップ操作（実際の業務操作は workflow_roles の binding で制御）"
+    },
+    {
+      "id": "admin",
+      "label": "管理者",
+      "description": "テンプレート管理・役割管理・組織内すべてのシート / 是正アクション操作"
+    }
+  ],
+  "navigation": [
+    {
+      "label": "パトロール一覧",
+      "path": "/patrols",
+      "icon": "ClipboardList",
+      "minRole": "viewer"
+    },
+    {
+      "label": "是正アクション",
+      "path": "/correctives",
+      "icon": "ClipboardCheck",
+      "minRole": "viewer"
+    },
+    {
+      "label": "ダッシュボード",
+      "path": "/dashboard",
+      "icon": "BarChart3",
+      "minRole": "viewer"
+    },
+    {
+      "label": "管理メニュー",
+      "path": "/admin",
+      "icon": "Settings2",
+      "minRole": "admin"
+    }
+  ],
+  "tablePrefix": "patrol",
+  "transactionalTables": [
+    "patrol_corrective_actions",
+    "patrol_sheet_comments",
+    "patrol_sheet_steps",
+    "patrol_sheet_items",
+    "patrol_check_sheets"
+  ],
+  "tables": [
+    "patrol_check_sheets",
+    "patrol_sheet_items",
+    "patrol_sheet_steps",
+    "patrol_workflow_templates",
+    "patrol_workflow_steps",
+    "patrol_checklist_templates",
+    "patrol_items",
+    "patrol_corrective_actions",
+    "patrol_configs",
+    "patrol_workflow_roles",
+    "patrol_workflow_role_bindings",
+    "patrol_dept_admin_scopes",
+    "patrol_sheet_comments"
+  ],
+  "depends": [],
+  "emits": [],
+  "subscribes": []
+}

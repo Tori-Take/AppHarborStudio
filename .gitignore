@@ -1,0 +1,18 @@
+node_modules/
+.next/
+out/
+.studio-db/
+# マウントされたカートリッジ（mount-cartridges.js で生成）
+# [slug] はリテラルなディレクトリ名なので [ をエスケープ
+app/org/\[slug\]/apps/*/
+!app/org/\[slug\]/apps/page.tsx
+!app/org/\[slug\]/layout.tsx
+*.log
+.DS_Store
+.env
+.env.local
+.env.*.local
+
+# 同期スクリプトで親から取り込まれた型ファイル（任意で git 管理しても OK）
+# 単独配布時は git 管理した状態で凍結したいので、コミット推奨。
+# lib/sdk-mock/types-synced.ts
