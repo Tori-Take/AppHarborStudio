@@ -342,6 +342,319 @@ Studio は**モノクロ**。カラーは本番 (AppHarbor 本体) 専用:
 
 ---
 
+## 🗺 設計の振り返りと将来構想
+
+> 2026-05-11 の壁打ちで整理。Studio 大改修に取り組む前に必ずここを再読すること。
+> これまでの試行錯誤と、これから目指す方向を一望できる「設計の歴史と地図」。
+
+---
+
+### 1. SDK・DB のメンタルモデル（これは守る）
+
+```
+カートリッジコード (例: patrol-navi/routes/...)
+  import { getAdminSupabase, requireApp } from '@/sdk'
+  await supabase.from('patrol_check_sheets').insert(...)
+
+         │ 同じ API で 3 環境に対応
+         ▼
+SDK 層 (lib/sdk-mock + lib/sdk-base)
+         │
+   ┌─────┴──────┬─────────────────┐
+   ▼            ▼                  ▼
+ ローカル     Studio Deploy    AppHarbor 本番
+ PGlite       Supabase          Supabase
+ .studio-db/  studio スキーマ   public スキーマ
+ pgdata       (本番 DB 内分離)   (本番 DB メイン)
+```
+
+**カートリッジ作者の責務は 3 つだけ:**
+1. `db/schema.sql` — テーブル定義（全テーブルに `organization_id`）
+2. `manifest.json` — メタ情報
+3. `routes/*` — 必ず `organization_id` でフィルタするコード
+
+> **「カートリッジは organization_id を持つテーブルを作るだけ。データがどこに保存されるかは SDK と環境が決める」**
+
+これ 1 行に集約されるのが Studio の核となる設計思想。
+
+---
+
+### 2. これまでに積み上げた仕掛け（2026-05 時点）
+
+時系列で「何がきっかけで」「何を作ったか」を整理:
+
+| 時期 | きっかけ | 追加した仕掛け | 場所 |
+|---|---|---|---|
+| 初期 | カートリッジ開発をローカル完結させたい | PGlite + supabase-mock | `lib/sdk-mock/` |
+| 初期 | 認証なしで権限テストしたい | Cookie ベースのモックユーザー | `lib/sdk-mock/store.ts` |
+| 中期 | Studio を Vercel にデプロイしてデモしたい | in-memory PGlite + サンプルデータ自動投入 | `lib/sdk-mock/pg.ts` |
+| 中期 | Vercel の read-only FS でロール永続化が壊れた | Cookie 経由でロール上書き保存 | `lib/sdk-mock/app-permissions.ts` |
+| 中期 | Vercel で写真がエフェメラル | ファイル保存 + `/api/studio-storage` | `app/api/studio-storage/route.ts` |
+| 後期 | Vercel で関数間 DB 不共有 → CSV インポート 404 | リダイレクト廃止 + alert に変更 | `cartridges/.../ImportChecklistButton.tsx` |
+| 後期 | 根本解決として永続化が欲しい | 本番 Supabase の `studio` スキーマ統合 | `lib/sdk-mock/supabase-real.ts` |
+| 後期 | studio スキーマを PostgREST から見えるように | GRANT + Exposed Schemas 設定 | `supabase/migrations/...studio_grants.sql` |
+
+→ デプロイ Studio を「動くもの」にするだけで**workaround を 5 段重ね**ている。
+これは「思想の単純さ」から離れてしまった象徴。
+
+---
+
+### 3. 今の Studio が思想からズレている 4 点
+
+#### A. カートリッジコードが 3 箇所に重複
+
+```
+AppHarbor リポジトリ
+  └── cartridges/<id>/             ← 真のソース
+AppHarborStudio リポジトリ
+  ├── cartridges/<id>/             ← 手動コピー
+  └── app/org/[slug]/apps/<id>/    ← mount-cartridges.js が複製
+```
+
+1 修正 → 3 箇所コピー。本セッションでも繰り返し発生。
+
+#### B. スキーマが 3 重管理
+
+| 場所 | 役割 |
+|---|---|
+| `cartridges/<id>/db/schema.sql` | ローカル PGlite に適用 |
+| `supabase/migrations/...studio_schema.sql` | Vercel Studio 用（studio スキーマ） |
+| `supabase/migrations/...cart_<id>_v*.sql` | AppHarbor 本番用（public スキーマ） |
+
+同じ内容を 3 形態で書き分け、同期ルールが明文化されていない。
+
+#### C. Studio デプロイ版の位置付け曖昧
+
+「Studio = 開発環境」が思想なら、本来 Vercel にデプロイする必然性は低い。
+にも関わらずデプロイした結果、上記の workaround 5 連発に至った。
+
+#### D. migration 生成が手動
+
+理想: `db/schema.sql` 更新 → コマンド一発で本番用 + studio 用 migration 自動生成
+現実: 手書きで 2 種類のファイル + ALTER TABLE まで手動
+
+---
+
+### 4. 大改修の方向性
+
+> **方針: 「Studio はカートリッジ作者と AI のための最良の出発点」に再定義する**
+
+#### 4-1. リポジトリ構造の単純化
+
+**現状:**
+- AppHarbor 本体リポ ＋ AppHarborStudio リポ（独立）
+- カートリッジコードが 2 つのリポに重複
+
+**改修後候補 A: モノレポ化**
+```
+appharbor/ (1 つのリポジトリ)
+  ├── app/                  ← AppHarbor 本番 (Vercel project A)
+  ├── studio/               ← Studio (Vercel project B、同じリポから)
+  ├── cartridges/           ← 単一ソース
+  └── packages/
+      └── sdk/              ← @appharbor/sdk として publish 可能
+```
+
+**改修後候補 B: SDK だけ独立リポ + 残りはモノレポ**
+- `appharbor/sdk` — SDK 独立リポ (npm 配布)
+- `appharbor/main` — AppHarbor + Studio + cartridges
+- 一番疎結合で外部開発者と共有しやすい
+
+→ 候補 B が拡張性高い。
+
+#### 4-2. SDK を独立パッケージへ
+
+```
+@appharbor/sdk
+  ├── 公開: 型 + 関数のインターフェース + 一部実装
+  ├── 配布:
+  │     Phase 1: github:appharbor/sdk#vX.Y.Z (git 直接参照)
+  │     Phase 2: GitHub Packages (認証付き)
+  │     Phase 3: npm 公開
+  └── 環境別実装の差し替え:
+        Studio: webpack alias で sdk-mock に向ける
+        AppHarbor 本番: そのまま使う (実 Supabase)
+```
+
+**SDK = 契約** のパターン。カートリッジコードは sdk しか知らない。
+
+#### 4-3. カートリッジ配布: GitHub 連邦型（モデル B）
+
+```
+作成者リポ (個別):           中央レジストリ:                 Studio:
+yamada/cart-expense  ──┐   appharbor/cartridges-registry  ──┐
+sato/cart-chat        ─┼─►   └── registry.yaml           ──┼─► プレビュー & 一覧
+appharbor/cart-patrol ─┘                                  ─┘
+```
+
+- 作成者: `appharbor/cartridge-template` から「Use this template」で自分のリポ作成
+- 開発: ローカル / Codespaces のどちらでも
+- 提出: `cartridges-registry` リポへの PR (1 行追加)
+- Admin: PR レビュー → マージ = Studio プレビュー公開
+
+#### 4-4. 4 段階のリリースパイプライン
+
+```
+[Phase 1] 作成
+  作成者がローカル / Codespaces で開発
+       │
+       ├─ GitHub Actions が自動検証 (manifest / schema / lint)
+       │
+[Phase 2] プレビューデプロイ
+  Admin が submission を承認 → Studio プレビューへ
+       │
+       ├─ 作成者ごとに独立 schema (studio_creator_<uuid>)
+       │
+[Phase 3] ブラッシュアップ
+  作成者: プレビューを見ながらコミット → 自動再デプロイ
+  Admin: PR でフィードバック
+       │
+[Phase 4] 本番昇格
+  品質ゲート通過 → AppHarbor 本体カートリッジへ統合
+       │
+       └─ migration 自動生成 + マーケットプレイス公開
+```
+
+#### 4-5. AI 開発体験の組み込み
+
+**「AI バイブコーディングで AppHarbor SDK ネイティブのアプリが書ける」**を実現する 4 段ガードレール:
+
+1. **AI 向けドキュメント** — 各 AI ツールが読む規約ファイルを揃える
+   - `CLAUDE.md` (Claude Code)
+   - `.cursorrules` (Cursor)
+   - `.github/copilot-instructions.md` (GitHub Copilot)
+   - `AGENTS.md` (汎用)
+
+2. **TypeScript 型による物理ガード**
+   - `CartridgeTable` 等の型で `organization_id` 必須を強制
+   - AI が間違えると型エラーで気付く
+
+3. **MCP サーバー (`@appharbor/mcp`)**
+   - `get_sdk_reference()` / `get_example(pattern)` / `validate_cartridge()` を提供
+   - AI が動的に Studio のコンテキストに問い合わせ可能
+
+4. **テンプレート + サンプルカートリッジ群**
+   - パターン例 (CRUD / Workflow / Dashboard) を AI が学習元にする
+
+#### 4-6. ゼロインストール開発体験
+
+`appharbor/cartridge-template` に `.devcontainer/devcontainer.json` を配置:
+
+```
+[作成者の体験]
+1. cartridge-template を「Use this template」でフォーク
+2. 「Open in Codespaces」をクリック
+3. ブラウザに VS Code が起動 + Studio が自動起動
+4. AI アシスタント (Claude / Cursor) が CLAUDE.md を読み込み済み
+5. 即開発開始 — npm / Docker / Supabase 一切不要
+```
+
+#### 4-7. migration 自動生成スクリプト
+
+```bash
+npm run cartridge:release <cartridge-id>
+```
+
+このコマンドが:
+1. `cartridges/<id>/db/schema.sql` を読む
+2. 前回 release との diff を計算
+3. `supabase/migrations/<timestamp>_cart_<id>_v<version>.sql` を生成
+4. studio スキーマ版（`SET search_path TO studio` 付き）も同時生成
+
+→ 作者は `db/schema.sql` だけ書けばよくなる。スキーマ 3 重管理の終焉。
+
+#### 4-8. mount-cartridges 廃止
+
+`cartridges/` を `app/` から相対参照（`@cartridge/*` パスエイリアス）。
+ビルド時ファイルコピーをやめる → コード重複 3 箇所目を消滅させる。
+
+#### 4-9. Studio デプロイ版の位置付け再定義
+
+**新定義: Studio デプロイ版 = 「読み取り専用デモ + AI バイブコーディング起点」**
+
+データ永続化が本気で必要な場面は以下に振り分け:
+- ローカル Studio（開発者の手元、完全永続化）
+- AppHarbor 本番（カートリッジ正式リリース後）
+
+Vercel デプロイ Studio は:
+- カートリッジマーケットプレイスのデモ（誰でも触れる）
+- AI バイブコーディング Web UI の動作環境
+- クライアント向けプレビュー（共有 URL）
+
+→ 5 連発の workaround は「デモのため」と割り切れる。
+
+---
+
+### 5. 改修ロードマップ案
+
+#### Step 1: 基盤整備（1〜2 週間）
+
+- [ ] `appharbor/sdk` リポジトリ作成（既存の `lib/sdk-mock` + `lib/sdk-base` から抽出）
+- [ ] `appharbor/cartridge-template` リポジトリ作成（Hello World カートリッジ + `.devcontainer/`）
+- [ ] `appharbor/cartridges-registry` リポジトリ作成（registry.yaml + GitHub Actions 検証）
+
+#### Step 2: AI ファースト化（1 週間）
+
+- [ ] テンプレートに `CLAUDE.md` / `.cursorrules` / `copilot-instructions.md` を整備
+- [ ] サンプルカートリッジ 3 個（CRUD / Workflow / Dashboard）
+- [ ] AI 向け SDK ドキュメントを `docs/AI_GUIDE.md` に集約
+
+#### Step 3: マイグレーション自動化（2〜3 日）
+
+- [ ] `npm run cartridge:release` スクリプト実装
+- [ ] schema.sql の diff から SQL 自動生成
+- [ ] studio スキーマ版もセットで生成
+
+#### Step 4: モノレポ統合 / mount-cartridges 廃止（中期）
+
+- [ ] AppHarborStudio リポを AppHarbor 本体に統合
+- [ ] `mount-cartridges.js` を廃止し、Next.js のルーティングで直接読込
+- [ ] Vercel project 構成を見直し（同リポから 2 プロジェクト）
+
+#### Step 5: MCP サーバー（中期）
+
+- [ ] `@appharbor/mcp` 開発（Node.js）
+- [ ] 主要ツール実装: `get_sdk_reference` / `get_example` / `validate_cartridge`
+- [ ] Cursor / Claude Code への登録ドキュメント
+
+#### Step 6: マーケットプレイス UI（長期）
+
+- [ ] AppHarbor 本体に「カートリッジを探す」画面
+- [ ] registry.yaml を読んでカード表示
+- [ ] 組織管理者が 1 クリックでインストール
+
+#### Step 7: AI 生成 Web UI（長期）
+
+- [ ] bolt.new スタイル「アプリを 1 行で生成」UI
+- [ ] LLM + MCP + Studio プレビューを統合
+- [ ] AppHarbor の独自ポジション（業務 SaaS の v0.dev）として確立
+
+---
+
+### 6. 大改修中も守る原則
+
+1. **カートリッジ作者の責務 3 つ（schema.sql / manifest.json / routes/）は変えない**
+2. **`@/sdk` の公開インターフェースは破壊的変更しない**（既存カートリッジが壊れる）
+3. **organization_id ベースのマルチテナンシーは維持**
+4. **Studio ローカル開発（PGlite + ファイル永続化）の即時性は維持**
+5. **「動くカートリッジが正しい」**（型 / lint / migration が通っても動かないなら設計が悪い）
+
+---
+
+### 7. 関連する壁打ちログ
+
+このセクションは 2026-05-11 の以下の議論の整理結果:
+
+- 「Studio で作成したアプリのデータ保管場所をどうするか」
+- 「カートリッジ作成を GitHub で行えないか」
+- 「SDK を GitHub 経由で配布できないか」
+- 「AI バイブコーディングと Studio をどう統合するか」
+
+AppHarbor 本体の CLAUDE.md にも同様の整理がある（"今の Studio 実装が思想からズレているところ" セクション）。
+両方を同期しながら更新すること。
+
+---
+
 ## API ルート一覧
 
 | エンドポイント | メソッド | 用途 |
