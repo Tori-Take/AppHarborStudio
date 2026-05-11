@@ -26,11 +26,11 @@ export function ImportChecklistButton({ slug }: { slug: string }) {
           alert(`インポート失敗: ${res.error}`)
           return
         }
-        if (res.newId) {
-          router.push(`/org/${slug}/apps/patrol-navi/admin/checklists/${res.newId}`)
-        } else {
-          router.refresh()
-        }
+        // Vercel の in-memory PGlite はインスタンス間でデータが共有されないため、
+        // 別ページへ即リダイレクトすると 404 になることがある。
+        // リストページに留まり、リフレッシュで新規テンプレートを反映する。
+        router.refresh()
+        alert(`インポート完了: "${name}"`)
       })
     }
     reader.readAsText(file)
