@@ -148,6 +148,111 @@ async function advanceWorkflow(sheetId: string, stageOrder: number): Promise<voi
   }
 }
 
+// ─── ステップ引き戻し（承認済みステップを pending に戻す） ──────
+
+export async function withdrawStepAction(
+  slug: string,
+  sheetId: string,
+  stepId: string,
+): Promise<{ error?: string }> {
+  const guard = await requireOrgAccess(slug, 'member')
+  if (!guard.ok) return { error: guard.error }
+  const { actor } = guard
+
+  const { data: step } = await supabaseAdmin
+    .from('patrol_sheet_steps')
+    .select('*, patrol_check_sheets!inner(organization_id, status)')
+    .eq('id', stepId)
+    .eq('sheet_id', sheetId)
+    .single()
+
+  if (!step) return { error: 'ステップが見つかりません' }
+  const sheetOrg = (step as { patrol_check_sheets: { organization_id: string; status: string } | { organization_id: string; status: string }[] }).patrol_check_sheets
+  const sheetInfo = Array.isArray(sheetOrg) ? sheetOrg[0] : sheetOrg
+  if (sheetInfo?.organization_id !== actor.organizationId) {
+    return { error: 'このシートにアクセスする権限がありません' }
+  }
+  if (step.assignee_id && step.assignee_id !== actor.id) {
+    return { error: '操作権限がありません' }
+  }
+  if (step.status !== 'approved') {
+    return { error: 'このステップは引き戻しできません' }
+  }
+  if (sheetInfo?.status !== 'in_progress') {
+    return { error: 'ワークフロー進行中でないため引き戻しできません' }
+  }
+
+  // 後続ステップが操作済みなら引き戻し不可
+  const { data: laterSteps } = await supabaseAdmin
+    .from('patrol_sheet_steps')
+    .select('id, status')
+    .eq('sheet_id', sheetId)
+    .gt('step_order', step.step_order)
+    .neq('status', 'pending')
+    .limit(1)
+  if (laterSteps && laterSteps.length > 0) {
+    return { error: '後続のステップが操作済みのため引き戻しできません' }
+  }
+
+  // ステップを pending に戻す
+  const { error: stepError } = await supabaseAdmin
+    .from('patrol_sheet_steps')
+    .update({ status: 'pending', acted_at: null })
+    .eq('id', stepId)
+  if (stepError) return { error: stepError.message }
+
+  // current_step をこのステップの step_order に戻す
+  await supabaseAdmin
+    .from('patrol_check_sheets')
+    .update({ current_step: step.step_order })
+    .eq('id', sheetId)
+
+  revalidatePath(`/org/${slug}/apps/patrol-navi/patrols/${sheetId}`)
+  revalidatePath(`/org/${slug}/apps/patrol-navi/patrols`)
+  redirect(`/org/${slug}/apps/patrol-navi/patrols/${sheetId}`)
+}
+
+// ─── ステップコメント追加（完了後でも可） ─────────────────────────
+
+export async function addStepCommentAction(
+  slug: string,
+  sheetId: string,
+  stepId: string,
+  comment: string,
+): Promise<{ error?: string }> {
+  const guard = await requireOrgAccess(slug, 'member')
+  if (!guard.ok) return { error: guard.error }
+  const { actor } = guard
+
+  const { data: step } = await supabaseAdmin
+    .from('patrol_sheet_steps')
+    .select('*, patrol_check_sheets!inner(organization_id)')
+    .eq('id', stepId)
+    .eq('sheet_id', sheetId)
+    .single()
+
+  if (!step) return { error: 'ステップが見つかりません' }
+  const sheetOrg = (step as { patrol_check_sheets: { organization_id: string } | { organization_id: string }[] }).patrol_check_sheets
+  const sheetOrgId = Array.isArray(sheetOrg) ? sheetOrg[0]?.organization_id : sheetOrg?.organization_id
+  if (sheetOrgId !== actor.organizationId) {
+    return { error: 'このシートにアクセスする権限がありません' }
+  }
+  if (step.assignee_id && step.assignee_id !== actor.id) {
+    return { error: '操作権限がありません' }
+  }
+
+  await supabaseAdmin
+    .from('patrol_sheet_steps')
+    .update({
+      comment: comment.trim() || null,
+      acted_at: new Date().toISOString(),
+    })
+    .eq('id', stepId)
+
+  revalidatePath(`/org/${slug}/apps/patrol-navi/patrols/${sheetId}`)
+  return {}
+}
+
 // ─── 差戻し ─────────────────────────────────────────────────────
 
 export async function remandSheetAction(

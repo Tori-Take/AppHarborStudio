@@ -464,29 +464,64 @@ class AuthMock {
   }
 }
 
-// ─── Storage サブクライアント (no-op スタブ) ────────────────
-// Studio では実ファイル I/O は行わず、download() は空 Blob、upload() は擬似成功。
-// パスを記録するだけで Storage 機能を使うカートリッジが「動く」レベルに留める。
+// ─── Storage サブクライアント (ローカルファイル保存) ──────────
+// .studio-db/storage/{bucket}/{path} にファイルを保存し、
+// /api/studio-storage?bucket=...&path=... で配信する。
+import { writeFileSync, readFileSync, unlinkSync, mkdirSync } from 'fs'
+import { join, dirname } from 'path'
+import { existsSync } from 'fs'
+
+const STORAGE_ROOT = join(process.cwd(), '.studio-db', 'storage')
+
 class StorageBucketMock {
   constructor(private bucketId: string) {}
 
+  private filePath(path: string): string {
+    return join(STORAGE_ROOT, this.bucketId, path)
+  }
+
   async download(path: string): Promise<{ data: Blob | null; error: MockError | null }> {
-    void path
-    return { data: new Blob([], { type: 'application/octet-stream' }), error: null }
+    const fp = this.filePath(path)
+    if (!existsSync(fp)) return { data: null, error: { message: 'File not found', code: '404' } }
+    const buf = readFileSync(fp)
+    return { data: new Blob([buf]), error: null }
   }
-  async upload(path: string, _body: unknown, _opts?: unknown): Promise<{ data: { path: string } | null; error: MockError | null }> {
-    void _body; void _opts
-    return { data: { path: `${this.bucketId}/${path}` }, error: null }
+
+  async upload(path: string, body: unknown, _opts?: unknown): Promise<{ data: { path: string } | null; error: MockError | null }> {
+    try {
+      const fp = this.filePath(path)
+      mkdirSync(dirname(fp), { recursive: true })
+      if (body instanceof Blob || body instanceof File) {
+        const buf = Buffer.from(await (body as Blob).arrayBuffer())
+        writeFileSync(fp, buf)
+      } else if (Buffer.isBuffer(body)) {
+        writeFileSync(fp, body)
+      } else if (body instanceof ArrayBuffer) {
+        writeFileSync(fp, Buffer.from(body))
+      }
+      return { data: { path }, error: null }
+    } catch (e) {
+      return { data: null, error: { message: e instanceof Error ? e.message : 'Upload failed', code: '500' } }
+    }
   }
+
   async createSignedUrl(path: string, _expiresIn: number): Promise<{ data: { signedUrl: string } | null; error: MockError | null }> {
-    void _expiresIn
-    return { data: { signedUrl: `studio-mock://${this.bucketId}/${path}` }, error: null }
+    const fp = this.filePath(path)
+    if (!existsSync(fp)) return { data: null, error: { message: 'File not found', code: '404' } }
+    const url = `/api/studio-storage?bucket=${encodeURIComponent(this.bucketId)}&path=${encodeURIComponent(path)}`
+    return { data: { signedUrl: url }, error: null }
   }
+
   async remove(paths: string[]): Promise<{ data: Array<{ name: string }>; error: MockError | null }> {
+    for (const p of paths) {
+      const fp = this.filePath(p)
+      try { if (existsSync(fp)) unlinkSync(fp) } catch { /* ignore */ }
+    }
     return { data: paths.map((p) => ({ name: p })), error: null }
   }
+
   getPublicUrl(path: string): { data: { publicUrl: string } } {
-    return { data: { publicUrl: `studio-mock://${this.bucketId}/${path}` } }
+    return { data: { publicUrl: `/api/studio-storage?bucket=${encodeURIComponent(this.bucketId)}&path=${encodeURIComponent(path)}` } }
   }
 }
 

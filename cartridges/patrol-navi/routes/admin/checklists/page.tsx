@@ -6,6 +6,7 @@ import { cn }            from '../../_ui/cn'
 import { Plus, ClipboardList, ArrowLeft } from 'lucide-react'
 import { canManageTemplates } from '../../_helpers/patrolRole'
 import { TemplateListRow } from '../TemplateListRow'
+import { ImportChecklistButton } from './ImportChecklistButton'
 
 export default async function ChecklistsPage({
   params,
@@ -29,7 +30,7 @@ export default async function ChecklistsPage({
 
   return (
     <PatrolLayout isAdmin={true}>
-      <div className="p-4 sm:p-8">
+      <div className="p-8">
         <div className="mb-6 flex items-center justify-between">
           <div>
             <Link
@@ -41,13 +42,16 @@ export default async function ChecklistsPage({
             </Link>
             <h1 className="text-2xl font-bold">チェックリスト管理</h1>
           </div>
-          <Link
-            href={`${base}/admin/checklists/new`}
-            className={cn(buttonVariants())}
-          >
-            <Plus className="h-4 w-4" />
-            新規作成
-          </Link>
+          <div className="flex items-center gap-2">
+            <ImportChecklistButton slug={slug} />
+            <Link
+              href={`${base}/admin/checklists/new`}
+              className={cn(buttonVariants())}
+            >
+              <Plus className="h-4 w-4" />
+              新規作成
+            </Link>
+          </div>
         </div>
 
         {!templates || templates.length === 0 ? (

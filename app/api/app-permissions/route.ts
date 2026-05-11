@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAllPermissions, setOverrideRole } from '@/lib/sdk-mock/app-permissions'
 
 export async function GET() {
-  return NextResponse.json(getAllPermissions())
+  return NextResponse.json(await getAllPermissions())
 }
 
 /**
@@ -15,6 +15,6 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: 'invalid body' }, { status: 400 })
   }
   const role = typeof body.role === 'string' && body.role !== '' ? body.role : null
-  setOverrideRole(body.appId, body.userId, role)
+  await setOverrideRole(body.appId, body.userId, role)
   return NextResponse.json({ ok: true })
 }

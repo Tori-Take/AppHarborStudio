@@ -13,6 +13,6 @@ export async function POST(
 ) {
   const { appId } = await ctx.params
   const topUser = DEFAULT_USERS[0]
-  const initialized = initAppPermissions(appId, topUser.id)
+  const initialized = await initAppPermissions(appId, topUser.id)
   return NextResponse.json({ ok: true, initialized, topUserId: topUser.id })
 }

@@ -39,7 +39,7 @@ export default async function ChecklistTemplatePage({
 
   return (
     <PatrolLayout isAdmin={true}>
-      <div className="max-w-3xl p-4 sm:p-8">
+      <div className="mx-auto max-w-3xl p-4 sm:p-8">
         <Link
           href={`/org/${slug}/apps/patrol-navi/admin/checklists`}
           className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"

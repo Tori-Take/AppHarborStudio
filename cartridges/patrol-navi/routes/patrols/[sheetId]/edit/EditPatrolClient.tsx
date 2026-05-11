@@ -13,7 +13,7 @@ import { createBrowserSupabase as createClient } from '@/sdk/client'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../_ui/card'
 import { Button, buttonVariants } from '../../../_ui/button'
 import { cn }           from '../../../_ui/cn'
-import { ArrowLeft, Send, Save, AlertCircle, Filter, MessageSquare, Camera, X, ChevronDown, ChevronUp, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowLeft, Send, Save, AlertCircle, Filter, MessageSquare, Camera, X, ChevronDown, ChevronUp, RotateCcw, Trash2, CheckCircle2, XCircle } from 'lucide-react'
 import {
   RESULT_LABEL,
   SHEET_STATUS_LABEL,
@@ -239,6 +239,7 @@ export function EditPatrolClient({
     setSubmitError(null)
     // 1. 現在の itemStates を FormData にして save → 結果が DB に永続化
     const fd = new FormData()
+    fd.set('feedback', feedback)
     for (const [itemId, state] of Object.entries(itemStates)) {
       if (state.result !== null) {
         fd.set(`result_${itemId}`, state.result)
@@ -372,32 +373,30 @@ export function EditPatrolClient({
           <CardContent>
             <div className="flex flex-wrap items-center gap-2">
               {workflowStepsList.map((step, i) => {
-                const stepActive = sheet.current_step === step.step_order
-                const colorClass =
-                  step.status === 'approved' ? 'border-emerald-200 bg-emerald-50' :
-                  step.status === 'remanded' ? 'border-red-200 bg-red-50' :
-                  stepActive ? 'border-blue-200 bg-blue-50' :
-                  'border-muted bg-muted/30'
-                const statusLabel =
-                  step.status === 'approved' ? '承認済み' :
-                  step.status === 'remanded' ? '差戻し' :
-                  stepActive ? '対応中' : '承認待ち'
-                const statusBadge =
-                  step.status === 'approved' ? 'bg-emerald-100 text-emerald-700' :
-                  step.status === 'remanded' ? 'bg-red-100 text-red-700' :
-                  stepActive ? 'bg-blue-100 text-blue-700' :
-                  'bg-muted text-muted-foreground'
+                const isApproved = step.status === 'approved'
+                const isRemanded = step.status === 'remanded'
+                const isCurrent  = !isApproved && !isRemanded && sheet.current_step === step.step_order
+                const isFuture   = !isApproved && !isRemanded && !isCurrent
                 const assigneeName =
-                  step.assignee_user_name_snapshot === '__patroller_self__' ? '🧍 パトロール実施者本人' :
+                  step.assignee_user_name_snapshot === '__patroller_self__' ? 'パトロール実施者本人' :
                   step.assignee_id ? stepAssigneeNames[step.assignee_id] ?? '—' :
                   step.assignee_user_name_snapshot ?? '担当者未設定'
                 return (
                   <div key={step.id} className="flex items-center gap-2">
                     {i > 0 && <span className="text-sm text-muted-foreground">›</span>}
-                    <div className={cn('flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm', colorClass)}>
+                    <div className={cn(
+                      'flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm',
+                      isApproved ? 'border-emerald-200 bg-emerald-50' :
+                      isRemanded ? 'border-red-200 bg-red-50' :
+                      isCurrent  ? 'border-blue-300 bg-blue-50 ring-1 ring-blue-200' :
+                      'border-muted bg-muted/30 opacity-50'
+                    )}>
+                      {isApproved && <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />}
+                      {isRemanded && <XCircle className="h-4 w-4 text-red-600 shrink-0" />}
+                      {isCurrent && <div className="h-2 w-2 shrink-0 rounded-full bg-blue-500 animate-pulse" />}
                       <div>
-                        <p className="text-xs font-medium">
-                          ステージ {step.step_order}: {step.step_name}
+                        <p className={cn('text-xs font-medium', isFuture && 'text-muted-foreground')}>
+                          {step.step_name}
                           {step.assignee_role_label_snapshot && (
                             <span className="ml-1 inline-flex items-center rounded bg-violet-100 px-1 py-0 text-[9px] font-normal text-violet-700">
                               {step.assignee_role_label_snapshot}
@@ -406,9 +405,6 @@ export function EditPatrolClient({
                         </p>
                         <p className="text-[10px] text-muted-foreground">{assigneeName}</p>
                       </div>
-                      <span className={cn('ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium', statusBadge)}>
-                        {statusLabel}
-                      </span>
                     </div>
                   </div>
                 )

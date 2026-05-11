@@ -12,12 +12,13 @@
 
 import { useRouter } from 'next/navigation'
 import { useTransition } from 'react'
-import { Copy, Trash2, ChevronRight } from 'lucide-react'
+import { Copy, Trash2, ChevronRight, Download } from 'lucide-react'
 import { Button } from '../_ui/button'
 import { cn } from '../_ui/cn'
 import {
   copyChecklistTemplateAction,
   deleteChecklistTemplateAction,
+  exportChecklistTemplateAction,
 } from './checklists/actions'
 import {
   copyWorkflowTemplateAction,
@@ -64,6 +65,26 @@ export function TemplateListRow({
       } else {
         router.refresh()
       }
+    })
+  }
+
+  const handleExport = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (pending) return
+    start(async () => {
+      const res = await exportChecklistTemplateAction(templateId, slug)
+      if (res.error || !res.csv) {
+        alert(`エクスポート失敗: ${res.error ?? '不明なエラー'}`)
+        return
+      }
+      const bom  = '﻿'
+      const blob = new Blob([bom + res.csv], { type: 'text/csv;charset=utf-8' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `${res.templateName ?? 'checklist'}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
     })
   }
 
@@ -130,6 +151,17 @@ export function TemplateListRow({
       >
         <Copy className="h-3.5 w-3.5" />
       </Button>
+      {kind === 'checklist' && (
+        <Button
+          type="button" variant="ghost" size="sm"
+          className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+          onClick={handleExport}
+          title="エクスポート"
+          aria-label="エクスポート"
+        >
+          <Download className="h-3.5 w-3.5" />
+        </Button>
+      )}
       <Button
         type="button" variant="ghost" size="sm"
         className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"

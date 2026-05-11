@@ -7,6 +7,6 @@ export async function DELETE(
   ctx: { params: Promise<{ appId: string }> },
 ) {
   const { appId } = await ctx.params
-  resetAppPermissions(appId)
+  await resetAppPermissions(appId)
   return NextResponse.json({ ok: true })
 }

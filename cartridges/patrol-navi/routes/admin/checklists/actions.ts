@@ -5,6 +5,7 @@ const supabaseAdmin = getAdminSupabase()
 import { revalidatePath } from 'next/cache'
 import { redirect }       from 'next/navigation'
 import { requirePatrolAdminAction as requireOrgAccess } from '../../_helpers/patrolRole'
+import type { DisplayStyle, InputType } from '../../_types'
 
 // テンプレート編集時に version を +1。スナップショットされたシートと
 // 新規シート用テンプレートの差分を識別できるようにする。
@@ -361,6 +362,179 @@ export async function swapPatrolItemOrderAction(
 
   await bumpChecklistVersion(a.checklist_template_id as string, actor.organizationId)
   return {}
+}
+
+// ── CSV ヘルパー ────────────────────────────────────────────
+
+const CSV_HEADERS = [
+  '大分類', '中分類', '小分類', '点検項目',
+  '重要', '表示スタイル', '重み', '法令参照', '入力タイプ',
+] as const
+
+function csvEscape(v: string): string {
+  if (v.includes(',') || v.includes('"') || v.includes('\n')) {
+    return `"${v.replace(/"/g, '""')}"`
+  }
+  return v
+}
+
+function csvRow(cells: string[]): string {
+  return cells.map(csvEscape).join(',')
+}
+
+function parseCsvLine(line: string): string[] {
+  const cells: string[] = []
+  let cur = ''
+  let inQuote = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (inQuote) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++ }
+        else inQuote = false
+      } else {
+        cur += ch
+      }
+    } else if (ch === ',') {
+      cells.push(cur)
+      cur = ''
+    } else if (ch === '"' && cur === '') {
+      inQuote = true
+    } else {
+      cur += ch
+    }
+  }
+  cells.push(cur)
+  return cells
+}
+
+// ── エクスポート (CSV) ──────────────────────────────────────
+
+export async function exportChecklistTemplateAction(
+  templateId: string,
+  slug: string,
+): Promise<{ error?: string; csv?: string; templateName?: string }> {
+  const guard = await requireOrgAccess(slug)
+  if (!guard.ok) return { error: guard.error }
+  const { actor } = guard
+
+  const { data: tpl } = await supabaseAdmin
+    .from('patrol_checklist_templates')
+    .select('name, organization_id')
+    .eq('id', templateId)
+    .single()
+  if (!tpl || tpl.organization_id !== actor.organizationId) {
+    return { error: 'このテンプレートをエクスポートする権限がありません' }
+  }
+
+  const { data: items } = await supabaseAdmin
+    .from('patrol_items')
+    .select('category1, category2, category3, item_text, is_important, display_style, weight, regulation_ref, input_type')
+    .eq('checklist_template_id', templateId)
+    .eq('is_active', true)
+    .order('sort_order')
+
+  const lines = [csvRow([...CSV_HEADERS])]
+  for (const it of items ?? []) {
+    lines.push(csvRow([
+      (it.category1 as string) ?? '',
+      (it.category2 as string) ?? '',
+      (it.category3 as string) ?? '',
+      it.item_text as string,
+      it.is_important ? '○' : '',
+      (it.display_style as string) ?? 'normal',
+      String((it.weight as number) ?? 1),
+      (it.regulation_ref as string | null) ?? '',
+      (it.input_type as string) ?? 'result_only',
+    ]))
+  }
+
+  return { csv: lines.join('\r\n'), templateName: tpl.name as string }
+}
+
+// ── インポート (CSV) ────────────────────────────────────────
+
+export async function importChecklistTemplateAction(
+  slug: string,
+  csvText: string,
+  templateName: string,
+): Promise<{ error?: string; newId?: string }> {
+  const guard = await requireOrgAccess(slug)
+  if (!guard.ok) return { error: guard.error }
+  const { actor } = guard
+
+  const raw = csvText.replace(/^﻿/, '')
+  const lines = raw.split(/\r?\n/).filter((l) => l.trim() !== '')
+  if (lines.length < 2) return { error: 'ヘッダー行とデータ行が必要です' }
+
+  const header = parseCsvLine(lines[0])
+  const colIdx = (name: string) => header.indexOf(name)
+  const iCat1 = colIdx('大分類'), iCat2 = colIdx('中分類'), iCat3 = colIdx('小分類')
+  const iText = colIdx('点検項目'), iImp = colIdx('重要')
+  const iStyle = colIdx('表示スタイル'), iWeight = colIdx('重み')
+  const iReg = colIdx('法令参照'), iInput = colIdx('入力タイプ')
+
+  if (iText === -1) return { error: 'ヘッダーに「点検項目」列が見つかりません' }
+
+  const { data: last } = await supabaseAdmin
+    .from('patrol_checklist_templates')
+    .select('sort_order')
+    .eq('organization_id', actor.organizationId)
+    .is('deleted_at', null)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const newSortOrder = ((last?.sort_order as number | null) ?? 0) + 1
+
+  const name = templateName.trim() || 'インポート'
+  const { data: inserted, error: insErr } = await supabaseAdmin
+    .from('patrol_checklist_templates')
+    .insert({
+      organization_id: actor.organizationId,
+      name,
+      description: null,
+      is_active: true,
+      sort_order: newSortOrder,
+      version: 1,
+    })
+    .select('id')
+    .single()
+  if (insErr || !inserted) return { error: insErr?.message ?? 'テンプレート作成失敗' }
+  const newId = inserted.id as string
+
+  const validStyles = ['normal', 'important_red', 'important_bold', 'critical'] as const
+  const validInputs = ['result_only', 'result_with_number', 'result_with_text', 'result_with_choices'] as const
+  const cell = (cells: string[], idx: number) => (idx >= 0 ? cells[idx]?.trim() : '') ?? ''
+
+  const rows = lines.slice(1).map((line, idx) => {
+    const c = parseCsvLine(line)
+    const rawStyle = cell(c, iStyle)
+    const rawInput = cell(c, iInput)
+    const rawWeight = cell(c, iWeight)
+    return {
+      organization_id:       actor.organizationId,
+      checklist_template_id: newId,
+      category1:             cell(c, iCat1).slice(0, 200),
+      category2:             cell(c, iCat2).slice(0, 200),
+      category3:             cell(c, iCat3).slice(0, 200),
+      item_text:             cell(c, iText).slice(0, 1000),
+      sort_order:            idx + 1,
+      is_important:          cell(c, iImp) === '○',
+      display_style:         validStyles.includes(rawStyle as never) ? rawStyle : 'normal',
+      weight:                Number.isFinite(Number(rawWeight)) && rawWeight !== '' ? Number(rawWeight) : 1.0,
+      regulation_ref:        cell(c, iReg) || null,
+      input_type:            validInputs.includes(rawInput as never) ? rawInput : 'result_only',
+      is_active:             true,
+    }
+  }).filter((r) => r.item_text !== '')
+
+  if (rows.length === 0) return { error: 'インポートできる項目が 0 件です' }
+
+  const { error: itemErr } = await supabaseAdmin.from('patrol_items').insert(rows)
+  if (itemErr) return { error: `項目のインポートに失敗: ${itemErr.message}` }
+
+  revalidatePath(`/org/${slug}/apps/patrol-navi/admin/checklists`)
+  return { newId }
 }
 
 // チェック項目 削除

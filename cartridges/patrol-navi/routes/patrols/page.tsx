@@ -216,13 +216,11 @@ export default async function PatrolsPage({
                     // 編集可能なのは draft/remanded のシートのみ。
                     // admin でも in_progress / completed は編集不可（閲覧のみ）
                     const canEdit = isDraftOrRemanded && (isOwn || isAdmin)
-                    // クリックは常にチェックリスト画面 (/edit) へ。閲覧モードは /edit 側で判定
-                    const editHref = `${base}/${sheet.id}/edit`
-                    const editLabel = !canEdit
-                      ? '表示'
-                      : !isAdmin && sheet.status === 'draft'
-                      ? '記入する'
-                      : '編集'
+                    const needsAction = myActionSheetIds.has(sheet.id)
+                    const editHref = canEdit ? `${base}/${sheet.id}/edit` : `${base}/${sheet.id}`
+                    const editLabel = canEdit
+                      ? (!isAdmin && sheet.status === 'draft' ? '記入する' : '編集')
+                      : needsAction ? '確認' : '表示'
                     return (
                       <tr key={sheet.id} className="transition-colors hover:bg-muted/30">
                         <td className="px-4 py-3 font-medium">
@@ -270,8 +268,10 @@ export default async function PatrolsPage({
             <div className="space-y-2 md:hidden">
               {filteredSheets.map(sheet => {
                 const ngCount = ngCountMap.get(sheet.id) ?? 0
-                // クリックは常にチェックリスト画面 (/edit) へ。閲覧モードは /edit 側で判定
-                const editHref = `${base}/${sheet.id}/edit`
+                const isOwn = sheet.patroller_id === user.id
+                const isDraftOrRemanded = sheet.status === 'draft' || sheet.status === 'remanded'
+                const canEdit = isDraftOrRemanded && (isOwn || isPatrolAdmin(role))
+                const editHref = canEdit ? `${base}/${sheet.id}/edit` : `${base}/${sheet.id}`
                 return (
                   <Link
                     key={sheet.id}

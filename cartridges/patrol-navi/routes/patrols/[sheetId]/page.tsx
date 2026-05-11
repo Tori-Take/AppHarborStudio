@@ -27,9 +27,10 @@ import {
 } from '../../_types'
 import { ApprovalActions } from './approval-actions'
 import { PhotoGallery } from './PhotoGallery'
-import { withdrawSubmissionAction } from './actions'
+import { withdrawSubmissionAction, withdrawStepAction } from './actions'
 import { AssignCorrective } from './AssignCorrective'
 import { CommentsPanel, type CommentRow, type OrgUser } from './CommentsPanel'
+import { StepCommentForm } from './StepCommentForm'
 
 export default async function PatrolDetailPage({
   params,
@@ -80,7 +81,8 @@ export default async function PatrolDetailPage({
 
   // 写真の signed URL を一括取得（path → url）
   const photoUrlMap = new Map<string, string>()
-  const allPhotoPaths = items.flatMap(i => i.photo_urls ?? [])
+  const feedbackPhotoUrls: string[] = (sheet as PatrolCheckSheet & { feedback_photo_urls?: string[] | null }).feedback_photo_urls ?? []
+  const allPhotoPaths = [...items.flatMap(i => i.photo_urls ?? []), ...feedbackPhotoUrls]
   if (allPhotoPaths.length > 0) {
     const sheetOrgId = (sheet as PatrolCheckSheet).organization_id
     const safe = allPhotoPaths.filter(p => p.startsWith(`${sheetOrgId}/${sheetId}/`) && !p.includes('..'))
@@ -203,15 +205,18 @@ export default async function PatrolDetailPage({
     return acc
   }, {})
 
-  const stepStatusLabel: Record<string, string> = {
-    pending:  '承認待ち',
-    approved: '承認済み',
-    remanded: '差戻し',
-  }
-  const stepStatusStyle: Record<string, string> = {
-    pending:  'bg-blue-100 text-blue-700',
-    approved: 'bg-emerald-100 text-emerald-700',
-    remanded: 'bg-red-100 text-red-700',
+  // ステップ引き戻し可否（自分が承認済み & 後続未操作）
+  const withdrawableStepIds = new Set<string>()
+  if (typedSheet.status === 'in_progress') {
+    for (const step of steps) {
+      if (
+        step.status === 'approved' &&
+        (step.assignee_id === user.id || step.assignee_id === null) &&
+        !steps.some(s => s.step_order > step.step_order && s.status !== 'pending')
+      ) {
+        withdrawableStepIds.add(step.id)
+      }
+    }
   }
 
   return (
@@ -337,41 +342,86 @@ export default async function PatrolDetailPage({
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2 flex-wrap">
-              {steps.map((step, i) => (
-                <div key={step.id} className="flex items-center gap-2">
-                  {i > 0 && <span className="text-muted-foreground text-sm">›</span>}
-                  <div className={cn(
-                    'flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm',
-                    step.status === 'approved' ? 'border-emerald-200 bg-emerald-50' :
-                    step.status === 'remanded' ? 'border-red-200 bg-red-50' :
-                    typedSheet.current_step === step.step_order ? 'border-blue-200 bg-blue-50' :
-                    'border-muted bg-muted/30'
-                  )}>
-                    {step.status === 'approved' && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
-                    {step.status === 'remanded' && <XCircle className="h-4 w-4 text-red-600" />}
-                    <div>
-                      <p className="font-medium text-xs">
-                        {step.step_name}
-                        {step.step_type && step.step_type !== 'review' && (
-                          <span className="ml-1 inline-flex items-center rounded bg-muted px-1 py-0 text-[9px] font-normal text-muted-foreground">
-                            {step.step_type === 'comment' ? 'コメント' : '最終承認'}
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {step.assignee_id ? profileMap.get(step.assignee_id) ?? '—' : '担当者未設定'}
-                      </p>
-                    </div>
-                    <span className={cn(
-                      'ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-                      stepStatusStyle[step.status]
+              {steps.map((step, i) => {
+                const isSkipped  = step.status === 'approved' && !step.comment
+                const isApproved = step.status === 'approved' && !isSkipped
+                const isRemanded = step.status === 'remanded'
+                const isCurrent  = !isApproved && !isSkipped && !isRemanded && typedSheet.current_step === step.step_order
+                const isFuture   = !isApproved && !isSkipped && !isRemanded && !isCurrent
+                return (
+                  <div key={step.id} className="flex items-center gap-2">
+                    <span className={cn('text-sm', i > 0 ? 'text-muted-foreground' : 'invisible')}>›</span>
+                    <div className={cn(
+                      'flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm',
+                      isApproved ? 'border-emerald-200 bg-emerald-50' :
+                      isRemanded ? 'border-red-200 bg-red-50' :
+                      (isCurrent || isSkipped) ? 'border-blue-300 bg-blue-50 ring-1 ring-blue-200' :
+                      'border-muted bg-muted/30 opacity-50'
                     )}>
-                      {stepStatusLabel[step.status]}
-                    </span>
+                      {isApproved && <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />}
+                      {isRemanded && <XCircle className="h-4 w-4 text-red-600 shrink-0" />}
+                      {isCurrent && <div className="h-2 w-2 shrink-0 rounded-full bg-blue-500 animate-pulse" />}
+                      {isSkipped && <div className="h-2 w-2 shrink-0 rounded-full bg-blue-400" />}
+                      <div>
+                        <p className={cn('font-medium text-xs', isFuture && 'text-muted-foreground')}>
+                          {step.step_name}
+                          {step.step_type && step.step_type !== 'review' && (
+                            <span className="ml-1 inline-flex items-center rounded bg-muted px-1 py-0 text-[9px] font-normal text-muted-foreground">
+                              {step.step_type === 'comment' ? 'コメント' : '最終承認'}
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {step.assignee_id ? profileMap.get(step.assignee_id) ?? '—' : '担当者未設定'}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
+
+            {/* ステップコメント + 引き戻しボタン */}
+            {steps.filter(s => s.status !== 'pending' && (s.comment || withdrawableStepIds.has(s.id))).length > 0 && (
+              <div className="mt-4 space-y-2 border-t pt-3">
+                {steps.filter(s => s.status !== 'pending' && (s.comment || withdrawableStepIds.has(s.id))).map(step => (
+                  <div key={step.id} className="flex gap-3 text-sm">
+                    <div className="shrink-0">
+                      {step.status === 'approved'
+                        ? <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
+                        : <XCircle className="mt-0.5 h-4 w-4 text-red-600" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium text-foreground">
+                            {step.assignee_id ? profileMap.get(step.assignee_id) ?? '—' : '—'}
+                          </span>
+                          （{step.step_name}）
+                          {step.acted_at && (
+                            <span className="ml-1">{new Date(step.acted_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                          )}
+                        </p>
+                        {withdrawableStepIds.has(step.id) && (
+                          <form action={async () => { 'use server'; await withdrawStepAction(slug, sheetId, step.id) }}>
+                            <button
+                              type="submit"
+                              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-6 px-2 text-[11px] text-amber-700 border-amber-300 hover:bg-amber-50')}
+                            >
+                              <RotateCcw className="mr-1 h-3 w-3" />
+                              引き戻す
+                            </button>
+                          </form>
+                        )}
+                      </div>
+                      {step.comment && (
+                        <p className="mt-0.5 whitespace-pre-wrap">{step.comment}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* 承認・差戻しボタン */}
             {canApprove && currentStepData && (
@@ -382,11 +432,103 @@ export default async function PatrolDetailPage({
                   stepId={currentStepData.id}
                   stepName={currentStepData.step_name}
                   stepType={(currentStepData.step_type ?? 'review') as PatrolWorkflowStepType}
+                  initialComment={currentStepData.comment ?? ''}
                 />
               </div>
             )}
+
+            {/* 自分の未コメントステップにコメント追加（完了後も可） */}
+            {!canApprove && steps
+              .filter(s =>
+                s.status === 'approved' &&
+                !s.comment &&
+                (s.assignee_id === user.id || s.assignee_id === null)
+              )
+              .map(step => (
+                <StepCommentForm
+                  key={step.id}
+                  slug={slug}
+                  sheetId={sheetId}
+                  stepId={step.id}
+                  stepName={step.step_name}
+                />
+              ))}
           </CardContent>
         </Card>
+
+        {/* パトロール報告（レビュー段階で表示） */}
+        {typedSheet.status !== 'draft' && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">パトロール報告</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-3 text-sm">
+                <span className="text-muted-foreground">パトロール者:</span>
+                <span className="font-medium">{patrollerProfile?.display_name ?? '—'}</span>
+              </div>
+              {(typedSheet.feedback || feedbackPhotoUrls.length > 0) && (
+                <div className="rounded-md border bg-muted/30 p-3">
+                  {typedSheet.feedback && (
+                    <>
+                      <p className="mb-1 text-xs font-medium text-muted-foreground">総合コメント</p>
+                      <p className="whitespace-pre-wrap text-sm">{typedSheet.feedback}</p>
+                    </>
+                  )}
+                  {feedbackPhotoUrls.length > 0 && (
+                    <PhotoGallery
+                      urls={feedbackPhotoUrls
+                        .map(p => photoUrlMap.get(p))
+                        .filter((u): u is string => Boolean(u))}
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* コメント・写真付きの注目項目 */}
+              {(() => {
+                const notedItems = items.filter(i => i.comment || (i.photo_urls?.length ?? 0) > 0)
+                if (notedItems.length === 0) return null
+                return (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold text-muted-foreground border-b pb-1">
+                      コメント・写真付き項目（{notedItems.length}件）
+                    </p>
+                    <div className="divide-y">
+                      {notedItems.map(item => (
+                        <div key={item.id} className="py-2.5">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span>{item.category1}</span>
+                            <span>›</span>
+                            <span>{item.category2}</span>
+                            {item.result && (
+                              <span className={cn('ml-auto font-bold', RESULT_COLOR[item.result as PatrolItemResult])}>
+                                {RESULT_LABEL[item.result as PatrolItemResult]}
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{item.item_text}</p>
+                          {item.comment && (
+                            <p className="mt-1 text-sm">
+                              {item.comment}
+                            </p>
+                          )}
+                          {(item.photo_urls?.length ?? 0) > 0 && (
+                            <PhotoGallery
+                              urls={item.photo_urls
+                                .map(p => photoUrlMap.get(p))
+                                .filter((u): u is string => Boolean(u))}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
+            </CardContent>
+          </Card>
+        )}
 
         {/* 検査結果一覧 */}
         <Card>

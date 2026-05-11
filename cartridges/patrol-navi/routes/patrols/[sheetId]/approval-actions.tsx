@@ -14,6 +14,7 @@ interface ApprovalActionsProps {
   stepId:   string
   stepName: string
   stepType: PatrolWorkflowStepType
+  initialComment?: string
 }
 
 export function ApprovalActions({
@@ -22,8 +23,9 @@ export function ApprovalActions({
   stepId,
   stepName,
   stepType,
+  initialComment = '',
 }: ApprovalActionsProps) {
-  const [comment,     setComment]     = useState('')
+  const [comment,     setComment]     = useState(initialComment)
   const [error,       setError]       = useState<string | null>(null)
   const [isPending,   startTransition] = useTransition()
 

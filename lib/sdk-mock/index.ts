@@ -88,7 +88,7 @@ export async function getAppRole(args: {
 }): Promise<string | null> {
   const u = await getCurrentMockUserServer()
   if (u.id !== args.userId) return null
-  const override = getOverrideRole(args.appId, args.userId)
+  const override = await getOverrideRole(args.appId, args.userId)
   if (override) return override
   if (u.appRoles[args.appId]) return u.appRoles[args.appId]
   return getManifestDefaultRole(args.appId) ?? 'member'
