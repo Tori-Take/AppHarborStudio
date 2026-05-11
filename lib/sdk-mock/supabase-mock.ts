@@ -536,7 +536,25 @@ class SupabaseClientMock {
 }
 
 let _client: SupabaseClientMock | null = null
+// Vercel デプロイ時は実 Supabase (studio スキーマ) に切替
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _realClient: any = null
+
 export function getSupabaseMock(): SupabaseClientMock {
+  if (process.env.VERCEL) {
+    if (!_realClient) {
+      // 動的 require で local dev のバンドルサイズに影響させない
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getRealSupabaseAdmin, isRealSupabaseConfigured } = require('./supabase-real')
+      if (isRealSupabaseConfigured()) {
+        _realClient = getRealSupabaseAdmin()
+        console.log('[supabase-mock] Vercel 環境検出 → 実 Supabase (studio スキーマ) を使用')
+      } else {
+        console.warn('[supabase-mock] STUDIO_SUPABASE_URL / STUDIO_SUPABASE_SERVICE_ROLE_KEY 未設定 → PGlite モックを使用')
+      }
+    }
+    if (_realClient) return _realClient as SupabaseClientMock
+  }
   if (!_client) _client = new SupabaseClientMock()
   return _client
 }
