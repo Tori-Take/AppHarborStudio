@@ -482,7 +482,7 @@ class StorageBucketMock {
 
   async download(path: string): Promise<{ data: Blob | null; error: MockError | null }> {
     const fp = this.filePath(path)
-    if (!existsSync(fp)) return { data: null, error: { message: 'File not found', code: '404' } }
+    if (!existsSync(fp)) return { data: null, error: { message: 'File not found' } }
     const buf = readFileSync(fp)
     return { data: new Blob([buf]), error: null }
   }
@@ -501,13 +501,13 @@ class StorageBucketMock {
       }
       return { data: { path }, error: null }
     } catch (e) {
-      return { data: null, error: { message: e instanceof Error ? e.message : 'Upload failed', code: '500' } }
+      return { data: null, error: { message: e instanceof Error ? e.message : 'Upload failed' } }
     }
   }
 
   async createSignedUrl(path: string, _expiresIn: number): Promise<{ data: { signedUrl: string } | null; error: MockError | null }> {
     const fp = this.filePath(path)
-    if (!existsSync(fp)) return { data: null, error: { message: 'File not found', code: '404' } }
+    if (!existsSync(fp)) return { data: null, error: { message: 'File not found' } }
     const url = `/api/studio-storage?bucket=${encodeURIComponent(this.bucketId)}&path=${encodeURIComponent(path)}`
     return { data: { signedUrl: url }, error: null }
   }
