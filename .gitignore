@@ -2,6 +2,10 @@ node_modules/
 .next/
 out/
 .studio-db/
+# fetch-cartridges.js で GitHub から取り込まれたカートリッジ
+cartridges/_installed/
+# ローカル開発用カートリッジ（任意で git 管理しても OK）
+cartridges/_local/
 # マウントされたカートリッジ（mount-cartridges.js で生成）
 # [slug] はリテラルなディレクトリ名なので [ をエスケープ
 app/org/\[slug\]/apps/*/

@@ -1,0 +1,28 @@
+# ============================================================
+# AppHarbor Studio カートリッジレジストリ
+#
+# このファイルが Studio に取り込むカートリッジを定義する。
+# `scripts/fetch-cartridges.js` が起動時に GitHub から clone し、
+# `cartridges/_installed/<id>/` 配下に配置する。
+#
+# 編集後は `npm run cart:fetch` で同期、または `npm run dev` 自動実行。
+# ============================================================
+
+version: 1
+
+cartridges:
+  # ─── 公式・本番運用カートリッジ ────────────────────────
+  - id: patrol-navi
+    repo: Tori-Take/cart-patrol-navi
+    ref: main                  # 当面 main に追従。安定後は v2.6.0 などタグ固定推奨
+    mode: installed            # 'installed' = GitHub から clone (読み取り専用)
+    enabled: true
+
+  # ─── ローカル開発中のカートリッジ ──────────────────────
+  # mode: local の場合は path を指定。.gitignore 対象 (_local/)
+  #
+  # 例:
+  # - id: my-new-app
+  #   mode: local
+  #   path: _local/my-new-app
+  #   enabled: true

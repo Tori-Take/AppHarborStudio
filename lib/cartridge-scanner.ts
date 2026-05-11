@@ -40,22 +40,42 @@ export type CartridgeEntry = {
   error?:    string
 }
 
+/**
+ * カートリッジを 3 ソースから収集（優先度高い順）:
+ *   1. cartridges/_local/<id>/        ← 開発中
+ *   2. cartridges/_installed/<id>/    ← GitHub から fetch
+ *   3. cartridges/<id>/                ← レガシー直置き（後方互換）
+ *
+ * 同 id が複数ソースにある場合は上の順で優先（_local が勝つ）。
+ */
+function collectCartridgePaths(root: string): Map<string, string> {
+  const seen = new Map<string, string>()  // id -> absolute path
+  const sources = [
+    join(root, '_local'),
+    join(root, '_installed'),
+    root,
+  ]
+  for (const src of sources) {
+    if (!existsSync(src)) continue
+    for (const name of readdirSync(src)) {
+      if (name.startsWith('_') || name.startsWith('.')) continue
+      const full = join(src, name)
+      try { if (!statSync(full).isDirectory()) continue } catch { continue }
+      if (!existsSync(join(full, 'manifest.json'))) continue
+      if (seen.has(name)) continue
+      seen.set(name, full)
+    }
+  }
+  return seen
+}
+
 export function scanCartridges(): CartridgeEntry[] {
   const root = resolveCartridgesPath()
   if (!existsSync(root)) return []
 
   const entries: CartridgeEntry[] = []
-  for (const name of readdirSync(root)) {
-    if (name.startsWith('_') || name.startsWith('.')) continue
-    const full = join(root, name)
-    let isDir = false
-    try { isDir = statSync(full).isDirectory() } catch { continue }
-    if (!isDir) continue
-
+  for (const [name, full] of collectCartridgePaths(root)) {
     const manifestPath = join(full, 'manifest.json')
-    // manifest.json が存在しないフォルダは一覧に出さない
-    // （削除残骸の空フォルダや作りかけの除外）
-    if (!existsSync(manifestPath)) continue
 
     let manifest: CartridgeManifest | null = null
     let error: string | undefined

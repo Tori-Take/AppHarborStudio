@@ -52,6 +52,35 @@ function isCartridgeFolder(name) {
   return !name.startsWith('_') && !name.startsWith('.')
 }
 
+/**
+ * カートリッジディレクトリを 3 ソースから走査:
+ *   1. cartridges/_local/<id>/        ← 開発中（最優先）
+ *   2. cartridges/_installed/<id>/    ← GitHub から fetch
+ *   3. cartridges/<id>/                ← レガシー直置き（後方互換）
+ *
+ * 同 id が複数ソースにある場合は上の順で優先。
+ */
+function collectCartridges(root) {
+  const seen = new Map()  // id -> absolutePath
+  const sources = [
+    path.join(root, '_local'),
+    path.join(root, '_installed'),
+    root,
+  ]
+  for (const src of sources) {
+    if (!fs.existsSync(src)) continue
+    for (const name of fs.readdirSync(src)) {
+      if (!isCartridgeFolder(name)) continue
+      const full = path.join(src, name)
+      if (!fs.statSync(full).isDirectory()) continue
+      if (!fs.existsSync(path.join(full, 'manifest.json'))) continue
+      if (seen.has(name)) continue
+      seen.set(name, full)
+    }
+  }
+  return seen
+}
+
 function main() {
   const root = resolveCartridgesRoot()
   if (!fs.existsSync(root)) {
@@ -73,11 +102,7 @@ function main() {
 
   let mounted = 0
   let skipped = 0
-  for (const name of fs.readdirSync(root)) {
-    if (!isCartridgeFolder(name)) continue
-    const cartridgeDir = path.join(root, name)
-    if (!fs.statSync(cartridgeDir).isDirectory()) continue
-
+  for (const [name, cartridgeDir] of collectCartridges(root)) {
     const routesDir = path.join(cartridgeDir, 'routes')
     if (!fs.existsSync(routesDir)) {
       console.log(`  ⚠ ${name}: routes/ がないためスキップ`)

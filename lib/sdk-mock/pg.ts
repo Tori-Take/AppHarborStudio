@@ -51,12 +51,21 @@ async function applySchemas(db: PGlite, seedSampleData = false) {
   }
 
   // 各カートリッジの db/schema.sql
+  // _local / _installed / 直置き の 3 ソースから収集（同 id は _local 優先）
   const root = resolveCartridgesRoot()
   if (!existsSync(root)) return
-  for (const name of readdirSync(root)) {
-    if (name.startsWith('_') || name.startsWith('.')) continue
-    const dir = join(root, name)
-    if (!statSync(dir).isDirectory()) continue
+  const cartridgePaths = new Map<string, string>()
+  for (const src of [join(root, '_local'), join(root, '_installed'), root]) {
+    if (!existsSync(src)) continue
+    for (const name of readdirSync(src)) {
+      if (name.startsWith('_') || name.startsWith('.')) continue
+      const full = join(src, name)
+      try { if (!statSync(full).isDirectory()) continue } catch { continue }
+      if (!existsSync(join(full, 'manifest.json'))) continue
+      if (!cartridgePaths.has(name)) cartridgePaths.set(name, full)
+    }
+  }
+  for (const [name, dir] of cartridgePaths) {
 
     // studioCompatible: false ならスキップ
     const manifestPath = join(dir, 'manifest.json')
