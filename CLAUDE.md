@@ -6,7 +6,25 @@ AppHarbor プラットフォームにインストール可能な小さなアプ�
 
 ---
 
-## 目的とビジョン
+## 🎯 AppHarbor 最終目標との関係
+
+Studio は **AppHarbor 全体の最終目標を実現する手段** のひとつ。
+全体ビジョンは AppHarbor 本体リポジトリの `docs/vision.md` に定義されている:
+
+> **B2B 業務 SaaS の共通インフラを 1 つにまとめ、AI バイブコーディングで「カートリッジを書く時間を 1/10 にする」プラットフォーム**
+
+参照: [Tori-Take/AppHarbor の docs/vision.md](https://github.com/Tori-Take/AppHarbor/blob/main/docs/vision.md)
+
+Studio はこのビジョンにおいて:
+- カートリッジ作者の **開発体験を最大化** する役割
+- ローカル環境で **3 環境統一実行** の最初の検証地点
+- AI バイブコーディングと連携する **入口**
+
+Studio の改修判断はすべて **「このビジョンへの貢献度」** で優先順位を決める。
+
+---
+
+## 目的とビジョン（Studio 自体）
 
 **最終目標**: AppHarbor にインストールできるアプリを、誰もがこの Studio で作れること。
 
