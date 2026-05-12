@@ -31,6 +31,12 @@
       ],
       "@/sdk/*": [
         "./lib/sdk-mock/*"
+      ],
+      "@appharbor/sdk": [
+        "./lib/sdk-mock"
+      ],
+      "@appharbor/sdk/*": [
+        "./lib/sdk-mock/*"
       ]
     }
   },
