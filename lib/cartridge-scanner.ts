@@ -1,6 +1,14 @@
-import { readdirSync, readFileSync, statSync, existsSync } from 'fs'
+import { readdirSync, readFileSync, statSync, existsSync, realpathSync } from 'fs'
 import { resolve, join } from 'path'
 import { resolveCartridgesPath } from './config'
+
+/**
+ * junction / symlink を解決して実体パスを返す。
+ * 解決に失敗したら入力パスをそのまま返す。
+ */
+function resolveRealPath(p: string): string {
+  try { return realpathSync(p) } catch { return p }
+}
 
 /** カートリッジ manifest.json の権限定義（オブジェクト形式） */
 export type ManifestPermission = {
@@ -88,7 +96,7 @@ export function scanCartridges(): CartridgeEntry[] {
 
     entries.push({
       id:        manifest?.id ?? name,
-      path:      full,
+      path:      resolveRealPath(full),  // junction を実体パスに解決
       manifest,
       hasRoutes: existsSync(join(full, 'routes')),
       hasDb:     existsSync(join(full, 'db')),
