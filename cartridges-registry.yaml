@@ -11,18 +11,21 @@
 version: 1
 
 cartridges:
-  # ─── 公式・本番運用カートリッジ ────────────────────────
+  # ─── ローカル開発中のカートリッジ ──────────────────────
+  # _local/patrol-navi は C:\Users\torit\Desktop\Projects\cart-patrol-navi
+  # への junction (symlink 相当)。ローカルクローンを直接編集すると Studio に
+  # 即反映される（高速イテレーション）。
+  # 公式リリース時は commit + push → 配布側は installed モードで取得。
   - id: patrol-navi
-    repo: Tori-Take/cart-patrol-navi
-    ref: main                  # 当面 main に追従。安定後は v2.6.0 などタグ固定推奨
-    mode: installed            # 'installed' = GitHub から clone (読み取り専用)
+    mode: local
+    path: _local/patrol-navi
     enabled: true
 
-  # ─── ローカル開発中のカートリッジ ──────────────────────
-  # mode: local の場合は path を指定。.gitignore 対象 (_local/)
+  # ─── GitHub から fetch するカートリッジ ───────────────
+  # 他人のカートリッジを利用する場合や、ローカル開発しない時はこちらを使う:
   #
-  # 例:
-  # - id: my-new-app
-  #   mode: local
-  #   path: _local/my-new-app
+  # - id: patrol-navi
+  #   repo: Tori-Take/cart-patrol-navi
+  #   ref: main                # branch / tag / commit SHA
+  #   mode: installed          # GitHub から clone (読み取り専用)
   #   enabled: true
