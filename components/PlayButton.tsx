@@ -82,16 +82,38 @@ export function PlayButton({ appId, slug = 'studio-sandbox' }: { appId: string; 
 
     setBusy(mode)
     const url = `/org/${slug}/apps/${appId}`
-    // クリックハンドラ同期で開かないとポップアップブロックされるため、
-    // 先に新タブを about:blank で開く。中身は「準備中…」を即時に書込み、
-    // 万一この後の処理が失敗・タイムアウトしてもタブが空白のまま放置されない。
+
+    // タイムアウト付き fetch (バックグラウンド処理のハング回避用)
+    const withTimeout = <T,>(p: Promise<T>, ms: number) =>
+      Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))])
+
+    // normal モード: 直接 URL へ open して即遷移。
+    //   mount / init はバックグラウンド (await しない) で実行する。
+    //   こうすることで、初回コンパイル時に init が遅くてもユーザーは待たされない。
+    //   遷移後のページは Next.js の通常コンパイル画面が表示される (見栄えも OK)。
+    if (mode === 'normal') {
+      const w = window.open(url, targetName)
+      winRef.current = w
+      // バックグラウンドで mount + init を実行 (タイムアウト付き、失敗は無視)
+      Promise.allSettled([
+        withTimeout(fetch('/api/mount', { method: 'POST' }), 15_000),
+        withTimeout(
+          fetch(`/api/app-permissions/${encodeURIComponent(appId)}/init`, { method: 'POST' }),
+          15_000,
+        ),
+      ]).finally(() => {
+        // 完了したら focus し直す (UX 改善)
+        try { if (w && !w.closed) w.focus() } catch { /* */ }
+      })
+      setBusy(false)
+      return
+    }
+
+    // data / full モード: リセットが必要なので、about:blank で開いて
+    //   splash を表示し、リセット完了後に遷移する。
     const w = window.open('about:blank', targetName)
     winRef.current = w
     paintLoading(w, appId, mode)
-
-    // 全処理にタイムアウトを設けて、ハングした時もタブ遷移は必ず試みる
-    const withTimeout = <T,>(p: Promise<T>, ms: number) =>
-      Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))])
 
     try {
       if (mode === 'data') {
@@ -103,15 +125,14 @@ export function PlayButton({ appId, slug = 'studio-sandbox' }: { appId: string; 
           await withTimeout(fetch('/api/studio/sample-seed', { method: 'POST' }), 15_000)
         }
       }
+      // リセット後の再 mount + 権限再初期化 (短めの timeout で待つ)
       await withTimeout(fetch('/api/mount', { method: 'POST' }), 15_000)
       await withTimeout(
         fetch(`/api/app-permissions/${encodeURIComponent(appId)}/init`, { method: 'POST' }),
         10_000,
       )
-      // dev server が再コンパイル中の可能性があるので、URL が serve できるまで
-      // health で確認 (最大 30 秒)。準備完了で navigation するため about:blank の
-      // ままになるリスクが大幅に減る。
-      await waitForHealth(20_000)
+      // dev server が応答するまで待つ (任意、失敗しても進む)
+      await waitForHealth(10_000)
     } catch {
       // 失敗しても遷移は試す (起動を諦めない)
     }
@@ -120,7 +141,6 @@ export function PlayButton({ appId, slug = 'studio-sandbox' }: { appId: string; 
         w.location.href = url
         w.focus()
       } else {
-        // ポップアップブロック時のフォールバック
         window.location.href = url
       }
     } finally {
