@@ -145,16 +145,27 @@ function resolveCartridgesRoot() {
   return join(STUDIO_ROOT, 'workspace')
 }
 
+/**
+ * 渡された相対パス (例: "patrol-navi/routes/admin/page.tsx",
+ *                   "_local/patrol-navi/routes/admin/page.tsx") を
+ * <cartridge-id, route-relative-path> に解釈し、PLAY_BASE/<id>/<route> へコピー。
+ */
 function syncFile(cartridgesRoot, relPath) {
-  // relPath: e.g. "patrol-navi/routes/admin/page.tsx" or "patrol-navi/manifest.json"
   const parts = relPath.split(/[/\\]/)
-  const cartridgeId = parts[0]
+  let cartridgeId, routesIdx
+  if (parts[0] === '_local' || parts[0] === '_installed') {
+    cartridgeId = parts[1]
+    routesIdx   = 2
+  } else {
+    cartridgeId = parts[0]
+    routesIdx   = 1
+  }
   if (!cartridgeId || cartridgeId.startsWith('_') || cartridgeId.startsWith('.')) return
 
   // routes/ 配下のみ同期対象
-  if (parts[1] !== 'routes' || parts.length < 3) return
+  if (parts[routesIdx] !== 'routes' || parts.length < routesIdx + 2) return
 
-  const routeRel = parts.slice(2).join(sep)
+  const routeRel = parts.slice(routesIdx + 1).join(sep)
   const src  = join(cartridgesRoot, relPath)
   const dest = join(PLAY_BASE, cartridgeId, routeRel)
 
@@ -175,6 +186,43 @@ function syncFile(cartridgesRoot, relPath) {
   }
 }
 
+/**
+ * 監視対象のカートリッジディレクトリを列挙する。
+ *   - cartridges/<id>/        (直置き)
+ *   - cartridges/_local/<id>/ (junction 含むローカル開発用)
+ *   - cartridges/_installed/<id>/  (GitHub から fetch)
+ * 各 <id>/routes だけを個別に watch することで、cartridges/ ルートに
+ * recursive watch を仕掛けないようにする。Windows の fs.watch は
+ * junction に対する recursive watch でハング・誤検知を起こすため、
+ * これを避ける重要な対策。
+ */
+function listCartridgeRouteDirs(cartridgesRoot) {
+  const result = []  // { cartridgeId, routesDir, relPathPrefix }
+  const tryAdd = (id, routesDir, relPathPrefix) => {
+    try {
+      if (existsSync(routesDir) && statSync(routesDir).isDirectory()) {
+        result.push({ cartridgeId: id, routesDir, relPathPrefix })
+      }
+    } catch { /* */ }
+  }
+  const scanDir = (subdir, prefix) => {
+    const dir = subdir ? join(cartridgesRoot, subdir) : cartridgesRoot
+    let names
+    try { names = readdirSync(dir) } catch { return }
+    for (const name of names) {
+      if (!subdir && (name.startsWith('_') || name.startsWith('.'))) continue
+      if (subdir && (name.startsWith('.') )) continue
+      const cartDir = join(dir, name)
+      try { if (!statSync(cartDir).isDirectory()) continue } catch { continue }
+      tryAdd(name, join(cartDir, 'routes'), prefix ? `${prefix}/${name}` : name)
+    }
+  }
+  scanDir(null, '')
+  scanDir('_local', '_local')
+  scanDir('_installed', '_installed')
+  return result
+}
+
 function startCartridgeWatcher() {
   const cartridgesRoot = resolveCartridgesRoot()
   if (!existsSync(cartridgesRoot)) {
@@ -185,29 +233,45 @@ function startCartridgeWatcher() {
 
   const pending = new Map()
   const DEBOUNCE_MS = 150
+  cartridgeWatcher = []
 
-  try {
-    cartridgeWatcher = watch(cartridgesRoot, { recursive: true }, (_event, filename) => {
-      if (!filename) return
-      const normalized = filename.replace(/\\/g, '/')
-      // debounce: same file within 150ms
-      if (pending.has(normalized)) clearTimeout(pending.get(normalized))
-      pending.set(normalized, setTimeout(() => {
-        pending.delete(normalized)
-        syncFile(cartridgesRoot, filename)
-      }, DEBOUNCE_MS))
-    })
-    cartridgeWatcher.on('error', (err) => {
-      console.error('[auto-sync] watcher error:', err.message)
-    })
-  } catch (e) {
-    console.error('[auto-sync] watcher の起動に失敗:', e.message)
+  const targets = listCartridgeRouteDirs(cartridgesRoot)
+  if (targets.length === 0) {
+    console.log('[auto-sync] watch 対象のカートリッジなし')
+    return
+  }
+
+  for (const { cartridgeId, routesDir, relPathPrefix } of targets) {
+    try {
+      const w = watch(routesDir, { recursive: true }, (_event, filename) => {
+        if (!filename) return
+        // routesDir を起点とする相対パス → cartridges/ ルートからの相対パスに変換
+        const relFromRoot = `${relPathPrefix}/routes/${filename.replace(/\\/g, '/')}`
+        if (pending.has(relFromRoot)) clearTimeout(pending.get(relFromRoot))
+        pending.set(relFromRoot, setTimeout(() => {
+          pending.delete(relFromRoot)
+          syncFile(cartridgesRoot, relFromRoot)
+        }, DEBOUNCE_MS))
+      })
+      w.on('error', (err) => {
+        console.error(`[auto-sync] watcher error (${cartridgeId}):`, err.message)
+      })
+      cartridgeWatcher.push(w)
+      console.log(`[auto-sync]   ▸ ${relPathPrefix}/routes/`)
+    } catch (e) {
+      console.error(`[auto-sync] watcher 起動失敗 (${cartridgeId}):`, e.message)
+    }
   }
 }
 
 function stopCartridgeWatcher() {
-  if (cartridgeWatcher) {
-    cartridgeWatcher.close()
+  if (Array.isArray(cartridgeWatcher)) {
+    for (const w of cartridgeWatcher) {
+      try { w.close() } catch { /* */ }
+    }
+    cartridgeWatcher = null
+  } else if (cartridgeWatcher) {
+    try { cartridgeWatcher.close() } catch { /* */ }
     cartridgeWatcher = null
   }
 }
