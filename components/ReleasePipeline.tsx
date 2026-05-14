@@ -13,8 +13,11 @@ type DeployInfo = {
   branch: string
   repoHead: string
   lastCommit: { fullSha: string; shortSha: string; date: string; author: string; subject: string } | null
+  commitCount: number | null     // sibling repo の総 commit 数 (null = レガシー / 不明)
   unpushedCount: number
   dirtyFiles: string[]
+  isSiblingRepo: boolean         // cart-* のような独立 git repo か
+  hasRemote: boolean             // origin remote が設定されているか
   github: { base: string; folderUrl: string | null; commitUrl: string | null } | null
   production: { baseUrl: string; platformUrl: string }
 }
@@ -114,20 +117,50 @@ export function ReleasePipeline({ appId }: { appId: string }) {
 
   const hasDirty   = info.dirtyFiles.length > 0
   const hasUnpush  = info.unpushedCount > 0
-  const phase1Status: StageStatus = hasDirty ? 'warn' : hasUnpush ? 'warn' : 'ok'
-  const phase1Detail = hasDirty
+
+  // 「初期 scaffold だけで実質開発がない」判定:
+  //   sibling repo で commit 数 ≤ 1 (初期コミットだけ) かつ remote が未設定
+  //   → まずローカル開発を始めるべき段階
+  const isInitialScaffold = info.isSiblingRepo
+    && (info.commitCount === null || info.commitCount <= 1)
+    && !info.hasRemote
+
+  // ─── Phase 1: ローカル ───────────────────────────────────
+  const phase1Status: StageStatus = isInitialScaffold
+    ? 'attention'                       // 開発まだ
+    : hasDirty
+    ? 'warn'                            // 未コミット
+    : hasUnpush
+    ? 'warn'                            // 未 push
+    : 'ok'
+  const phase1Detail = isInitialScaffold
+    ? '初期 scaffold (開発未着手)'
+    : hasDirty
     ? `未コミット ${info.dirtyFiles.length} ファイル`
     : hasUnpush
     ? `未 push コミット ${info.unpushedCount} 件`
     : `branch ${info.branch} と同期済み`
   const phase1Primary = info.lastCommit?.shortSha ?? '(no commits)'
 
-  const phase2Status: StageStatus = hasDirty ? 'attention' : hasUnpush ? 'attention' : 'ok'
-  const phase2Primary = info.repoHead.slice(0, 7)
-  const phase2Detail  = hasUnpush
+  // ─── Phase 2: GitHub / Studio Deploy ─────────────────────
+  // remote が無い間は Phase 2 は「未デプロイ」扱い (na)
+  const phase2Status: StageStatus = !info.hasRemote
+    ? 'na'                              // remote 未設定 = まだ GitHub に上げてない
+    : hasDirty
+    ? 'attention'
+    : hasUnpush
+    ? 'attention'
+    : 'ok'
+  const phase2Primary = info.hasRemote
+    ? info.repoHead.slice(0, 7)
+    : '(未 push)'
+  const phase2Detail = !info.hasRemote
+    ? 'GitHub にまだ push されていません'
+    : hasUnpush
     ? `${info.unpushedCount} コミット未反映`
     : 'main HEAD に同期'
 
+  // ─── Phase 3: AppHarbor 本番 ─────────────────────────────
   let phase3Status: StageStatus = 'unknown'
   let phase3Primary = '取得中'
   let phase3Detail  = '本番情報を取得しています'
@@ -165,14 +198,20 @@ export function ReleasePipeline({ appId }: { appId: string }) {
     },
   ]
 
-  // 「次に注目すべき Phase」を判定 (Action Center と同じロジック)
+  // 「次に注目すべき Phase」を判定 (新しいロジック):
+  //   1. 初期 scaffold だけ              → Phase 1 (開発から始める)
+  //   2. 未コミット / 未 push           → Phase 1 (コミット & push)
+  //   3. push 済みだが本番未インストール → Phase 3 (リリース)
+  //   4. 本番が古い                      → Phase 3 (再リリース)
+  //   5. すべて同期                      → なし (休んでください)
   let currentPhase: Stage['key'] | null = null
-  if (hasDirty || hasUnpush) {
-    currentPhase = 'phase1'              // 未コミット/未 push → ローカル作業
+  if (isInitialScaffold) {
+    currentPhase = 'phase1'
+  } else if (hasDirty || hasUnpush) {
+    currentPhase = 'phase1'
   } else if (phase3Status === 'na' || phase3Status === 'warn') {
-    currentPhase = 'phase3'              // 本番未インストール or 古い → リリース
+    currentPhase = 'phase3'
   }
-  // すべて同期済み (ok) なら currentPhase = null (現在地表示なし)
 
   return (
     <Card>
@@ -250,6 +289,7 @@ export function ReleasePipeline({ appId }: { appId: string }) {
         </div>
 
         <ActionCenter
+          isInitialScaffold={isInitialScaffold}
           hasDirty={hasDirty}
           hasUnpush={hasUnpush}
           unpushedCount={info.unpushedCount}
@@ -263,12 +303,14 @@ export function ReleasePipeline({ appId }: { appId: string }) {
 }
 
 function ActionCenter({
+  isInitialScaffold,
   hasDirty,
   hasUnpush,
   unpushedCount,
   dirtyCount,
   phase3Status,
 }: {
+  isInitialScaffold: boolean
   hasDirty: boolean
   hasUnpush: boolean
   unpushedCount: number
@@ -279,7 +321,12 @@ function ActionCenter({
   let body:  string
   let tone:  'info' | 'warn' | 'ok' = 'info'
 
-  if (hasDirty) {
+  if (isInitialScaffold) {
+    tone  = 'info'
+    title = 'まずは Claude Code で開発を始めましょう'
+    body  = '上の「開発」タブから AI 開発コンテキストをコピーして、Claude Code に貼り付けてください。' +
+            ' リリース・本番反映は実装が終わってからの話です。'
+  } else if (hasDirty) {
     tone  = 'warn'
     title = `${dirtyCount} ファイルの未コミット変更があります`
     body  = '動作確認後、コミットして push すると Phase 2 (Studio Deploy) に反映されます。'
