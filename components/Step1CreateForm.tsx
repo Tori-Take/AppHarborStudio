@@ -60,7 +60,7 @@ export function Step1CreateForm() {
         setBusy(false)
         return
       }
-      router.push(`/cartridge/${encodeURIComponent(effectiveId)}`)
+      router.push(`/cartridge/${encodeURIComponent(effectiveId)}/getting-started`)
       router.refresh()
     } catch (e) {
       setErr((e as Error).message)

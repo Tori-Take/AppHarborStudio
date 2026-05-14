@@ -1,6 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Bot, ChevronDown, ChevronUp, Check, Copy } from 'lucide-react'
+import {
+  Card, CardContent, CardDescription, CardHeader, CardTitle,
+} from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 type AiContext = {
   sdk: {
@@ -37,6 +43,8 @@ const DEFAULT_SELECTED: Set<Section> = new Set([
  * - チェックを ON/OFF してセクションを選ぶ
  * - 📋 でクリップボードに 1 つの巨大プロンプトとしてコピー
  * - プレビュー表示も可能 (折りたたみ)
+ *
+ * Tailwind + shadcn ベース。light / dark テーマ両対応。
  */
 export function AiContextPanel({ appId }: { appId: string }) {
   const [ctx,      setCtx]      = useState<AiContext | null>(null)
@@ -148,145 +156,111 @@ export function AiContextPanel({ appId }: { appId: string }) {
 
   if (error) {
     return (
-      <section style={errorPanel}>
-        <div style={label}>🤖 AI 開発コンテキスト</div>
-        <p style={{ fontSize: 13, color: '#fca5a5', margin: '8px 0 0' }}>
+      <Card className="border-destructive/40 bg-destructive/5">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Bot className="h-4 w-4 text-destructive" />
+            AI 開発コンテキスト
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-destructive">
           コンテキストを取得できませんでした: {error}
-        </p>
-      </section>
+        </CardContent>
+      </Card>
     )
   }
 
   if (!ctx) {
     return (
-      <section style={panel}>
-        <div style={label}>🤖 AI 開発コンテキスト</div>
-        <p style={{ fontSize: 13, color: '#94a3b8', margin: '8px 0 0' }}>読み込み中...</p>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Bot className="h-4 w-4 text-muted-foreground" />
+            AI 開発コンテキスト
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">読み込み中...</CardContent>
+      </Card>
     )
   }
 
   const promptLength = buildPrompt().length
 
   return (
-    <section style={panel}>
-      <div style={label}>🤖 AI 開発コンテキスト</div>
-      <p style={{ fontSize: 12, color: '#94a3b8', margin: '0 0 12px', lineHeight: 1.7 }}>
-        Claude Code に貼り付けて使う「カートリッジ開発の前提知識」を生成します。
-        SDK <code style={{ color: '#fbbf24' }}>@appharbor/sdk@{ctx.sdk.version}</code> の契約と、このカートリッジ固有の指示が含まれます。
-      </p>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Bot className="h-4 w-4" />
+          AI 開発コンテキスト
+        </CardTitle>
+        <CardDescription>
+          Claude Code に貼り付けて使う「カートリッジ開発の前提知識」を生成します。
+          SDK <code className="rounded bg-muted px-1.5 py-0.5 text-xs">@appharbor/sdk@{ctx.sdk.version}</code> の契約とこのカートリッジ固有の指示が含まれます。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-        {SECTIONS.map((s) => {
-          const checked = selected.has(s.key)
-          const available =
-            (s.key === 'overview' && !!ctx.sdk.readme)
-            || (s.key === 'sdk-types' && !!ctx.sdk.types)
-            || (s.key === 'sdk-functions' && !!(ctx.sdk.index || ctx.sdk.client))
-            || (s.key === 'cartridge-rules' && !!ctx.cartridge.claudeMd)
-            || s.key === 'rules'
+        <div className="space-y-2">
+          {SECTIONS.map((s) => {
+            const checked = selected.has(s.key)
+            const available =
+              (s.key === 'overview' && !!ctx.sdk.readme)
+              || (s.key === 'sdk-types' && !!ctx.sdk.types)
+              || (s.key === 'sdk-functions' && !!(ctx.sdk.index || ctx.sdk.client))
+              || (s.key === 'cartridge-rules' && !!ctx.cartridge.claudeMd)
+              || s.key === 'rules'
 
-          return (
-            <label
-              key={s.key}
-              style={{
-                display: 'flex', alignItems: 'flex-start', gap: 8,
-                fontSize: 12, color: available ? '#cbd5e1' : '#64748b',
-                cursor: available ? 'pointer' : 'not-allowed',
-                opacity: available ? 1 : 0.5,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={checked && available}
-                disabled={!available}
-                onChange={() => toggle(s.key)}
-                style={{ marginTop: 2 }}
-              />
-              <span>
-                <strong>{s.label}</strong>
-                <span style={{ color: '#64748b', marginLeft: 8, fontSize: 11 }}>
-                  — {s.hint}
-                  {!available && ' (ファイル無し)'}
+            return (
+              <label
+                key={s.key}
+                className={cn(
+                  'flex items-start gap-2 text-sm',
+                  available ? 'cursor-pointer text-foreground' : 'cursor-not-allowed text-muted-foreground opacity-50',
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked && available}
+                  disabled={!available}
+                  onChange={() => toggle(s.key)}
+                  className="mt-1 h-3.5 w-3.5 shrink-0"
+                />
+                <span>
+                  <strong className="font-medium">{s.label}</strong>
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    — {s.hint}
+                    {!available && ' (ファイル無し)'}
+                  </span>
                 </span>
-              </span>
-            </label>
-          )
-        })}
-      </div>
+              </label>
+            )
+          })}
+        </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button onClick={handleCopy} style={btnPrimary}>
-          {copied ? '✓ コピーしました' : '📋 クリップボードにコピー'}
-        </button>
-        <button
-          onClick={() => setPreviewOpen((v) => !v)}
-          style={btnGhost}
-        >
-          {previewOpen ? '▲ プレビューを閉じる' : '▼ プレビューを開く'}
-        </button>
-        <span style={{ fontSize: 11, color: '#64748b', marginLeft: 'auto' }}>
-          約 {promptLength.toLocaleString()} 文字 / 推定 {Math.ceil(promptLength / 4).toLocaleString()} トークン
-        </span>
-      </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={handleCopy} className="gap-1.5">
+            {copied
+              ? <Check className="h-4 w-4 text-emerald-500" />
+              : <Copy className="h-4 w-4" />}
+            {copied ? 'コピーしました' : 'クリップボードにコピー'}
+          </Button>
+          <Button variant="outline" onClick={() => setPreviewOpen((v) => !v)} className="gap-1.5">
+            {previewOpen
+              ? <><ChevronUp   className="h-4 w-4" /> プレビューを閉じる</>
+              : <><ChevronDown className="h-4 w-4" /> プレビューを開く</>}
+          </Button>
+          <span className="ml-auto text-xs text-muted-foreground">
+            約 {promptLength.toLocaleString()} 文字 / 推定 {Math.ceil(promptLength / 4).toLocaleString()} トークン
+          </span>
+        </div>
 
-      {previewOpen && (
-        <pre style={{
-          marginTop: 12, padding: 12,
-          background: '#0f172a', border: '1px solid #334155',
-          borderRadius: 6, color: '#e2e8f0',
-          fontSize: 11, lineHeight: 1.6,
-          fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
-          maxHeight: 400, overflow: 'auto',
-          whiteSpace: 'pre-wrap',
-        }}>
-          {buildPrompt()}
-        </pre>
-      )}
-    </section>
+        {previewOpen && (
+          <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed text-foreground">
+            {buildPrompt()}
+          </pre>
+        )}
+
+      </CardContent>
+    </Card>
   )
-}
-
-const panel: React.CSSProperties = {
-  background: 'rgba(96, 165, 250, 0.06)',
-  border: '1px solid rgba(96, 165, 250, 0.35)',
-  borderRadius: 8,
-  padding: 16,
-  marginBottom: 12,
-}
-
-const errorPanel: React.CSSProperties = {
-  ...panel,
-  background: 'rgba(239, 68, 68, 0.06)',
-  border: '1px solid rgba(239, 68, 68, 0.35)',
-}
-
-const label: React.CSSProperties = {
-  fontSize: 12,
-  color: '#60a5fa',
-  textTransform: 'uppercase',
-  letterSpacing: 0.5,
-  marginBottom: 8,
-  fontWeight: 600,
-}
-
-const btnPrimary: React.CSSProperties = {
-  background: '#60a5fa',
-  color: '#0f172a',
-  border: 'none',
-  borderRadius: 6,
-  padding: '8px 14px',
-  fontSize: 12,
-  fontWeight: 600,
-  cursor: 'pointer',
-}
-
-const btnGhost: React.CSSProperties = {
-  background: 'transparent',
-  color: '#94a3b8',
-  border: '1px solid #334155',
-  borderRadius: 6,
-  padding: '8px 12px',
-  fontSize: 12,
-  cursor: 'pointer',
 }

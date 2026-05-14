@@ -13,6 +13,7 @@ import { ResetCartridgeButton } from '@/components/ResetCartridgeButton'
 import { PublishedBadge } from '@/components/PublishedBadge'
 import { ReleasePipeline } from '@/components/ReleasePipeline'
 import { CartridgeWorkbench } from '@/components/CartridgeWorkbench'
+import { CopyButton } from '@/components/ui/copy-button'
 
 /** db/schema.sql から create table 文を抽出（コメント除外） */
 function extractTablesFromSchema(cartridgePath: string): string[] {
@@ -222,7 +223,10 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
 
       <section style={panelStyle}>
         <div style={labelStyle}>パス</div>
-        <code style={{ fontSize: 12, color: '#fbbf24', wordBreak: 'break-all' }}>{c.path}</code>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <code style={{ flex: 1, fontSize: 12, color: '#fbbf24', wordBreak: 'break-all' }}>{c.path}</code>
+          <CopyButton text={c.path} label="コピー" />
+        </div>
       </section>
 
       <section style={panelStyle}>
