@@ -7,7 +7,6 @@ import { LintPanel } from '@/components/LintPanel'
 import { ExportButton } from '@/components/ExportButton'
 import { AiDevPanel } from '@/components/AiDevPanel'
 import { PlayButton } from '@/components/PlayButton'
-import { CartridgeStepper } from '@/components/CartridgeStepper'
 import { DeployInfoPanel } from '@/components/DeployInfoPanel'
 import { ResetCartridgeButton } from '@/components/ResetCartridgeButton'
 import { PublishedBadge } from '@/components/PublishedBadge'
@@ -43,93 +42,88 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
   )
 
   // ───────── 開発モード (Phase 1) のコンテンツ ─────────
+  // ステッパーをやめてフラットに並べる。ModeTabs で「開発フェーズ」と分かっているので
+  // sub-step による段階表示は冗長だった。
   const developSection = (
-    <CartridgeStepper
-      appId={c.id}
-      initialStep={c.manifest ? 2 : 1}
-      step1={
-        <section style={panelStyle}>
-          <div style={labelStyle}>アプリ情報</div>
-          {c.manifest ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
-              <Row label="アプリ名">
-                <span style={{ color: '#e2e8f0' }}>
-                  {(c.manifest.name as string) ?? c.manifest.displayName ?? c.id}
-                </span>
+    <>
+      <section style={panelStyle}>
+        <div style={labelStyle}>アプリ情報</div>
+        {c.manifest ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+            <Row label="アプリ名">
+              <span style={{ color: '#e2e8f0' }}>
+                {(c.manifest.name as string) ?? c.manifest.displayName ?? c.id}
+              </span>
+            </Row>
+            <Row label="識別子">
+              <code style={{ color: '#fbbf24' }}>{c.id}</code>
+            </Row>
+            {c.manifest.description != null && String(c.manifest.description) && (
+              <Row label="説明">
+                <span style={{ color: '#cbd5e1' }}>{String(c.manifest.description)}</span>
               </Row>
-              <Row label="識別子">
-                <code style={{ color: '#fbbf24' }}>{c.id}</code>
+            )}
+            {c.manifest.version != null && (
+              <Row label="バージョン">
+                <code style={{ color: '#94a3b8' }}>v{String(c.manifest.version)}</code>
               </Row>
-              {c.manifest.description != null && String(c.manifest.description) && (
-                <Row label="説明">
-                  <span style={{ color: '#cbd5e1' }}>{String(c.manifest.description)}</span>
-                </Row>
-              )}
-              {c.manifest.version != null && (
-                <Row label="バージョン">
-                  <code style={{ color: '#94a3b8' }}>v{String(c.manifest.version)}</code>
-                </Row>
-              )}
-            </div>
-          ) : (
-            <p style={{ fontSize: 13, color: '#fca5a5', margin: 0 }}>
-              manifest.json が見つかりません。新規作成フォームは Phase 2 で実装予定。
-            </p>
-          )}
-          <p style={{ fontSize: 11, color: '#64748b', marginTop: 12, marginBottom: 0 }}>
-            ※ 現状は読み取り専用です。編集は <code>cartridges/{c.id}/manifest.json</code> を直接書き換えてください。
-          </p>
-        </section>
-      }
-      step2={
-        <>
-          <AiDevPanel appId={c.id} path={c.path} />
-          <section style={{
-            ...panelStyle,
-            background: '#1a2436',
-            border: '1px dashed #475569',
-          }}>
-            <div style={{ ...labelStyle, color: '#94a3b8' }}>
-              開発の進め方
-            </div>
-            <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.9, color: '#cbd5e1' }}>
-              <li>上の「<strong>エクスプローラーで開く</strong>」でフォルダを開く</li>
-              <li>そのフォルダを <strong>Claude Code</strong> で開いて開発を依頼する<br/>
-                <span style={{ fontSize: 11, color: '#64748b' }}>
-                  （フォルダ内の <code>CLAUDE.md</code> を AI が読み、まずロールと DB 要否を確認します）
-                </span>
-              </li>
-              <li>AI がコードを書き終えたら、下の「<strong>✓ 開発完了、動作確認へ</strong>」を押す</li>
-            </ol>
-          </section>
-        </>
-      }
-      step3={
-        <section style={{ ...panelStyle, borderColor: c.manifest?.studioCompatible === false ? '#ef4444' : '#60a5fa' }}>
-          <div style={{ ...labelStyle, color: c.manifest?.studioCompatible === false ? '#ef4444' : '#60a5fa' }}>
-            ▶ ローカルプレイ (Phase 1)
+            )}
           </div>
-          {c.manifest?.studioCompatible === false ? (
-            <div style={{ marginTop: 8 }}>
-              <div style={{ fontSize: 14, color: '#ef4444', fontWeight: 600 }}>Studio 非対応カートリッジ</div>
-              <p style={{ fontSize: 13, color: '#94a3b8', margin: '8px 0 0' }}>
-                {c.manifest.studioCompatibleNote ?? 'このカートリッジは規約違反の依存があるため Studio で起動できません。'}
-              </p>
-            </div>
-          ) : c.hasRoutes ? (
-            <PlayButton appId={c.id} />
-          ) : (
-            <p style={{ fontSize: 13, color: '#94a3b8', margin: '8px 0 0' }}>
-              routes/ がないため起動できません
-            </p>
-          )}
-          <p style={{ fontSize: 12, color: '#64748b', margin: '12px 0 0' }}>
-            DB は PGlite ファイル永続化。リセットは <code>studio/.studio-db/</code> を削除。
+        ) : (
+          <p style={{ fontSize: 13, color: '#fca5a5', margin: 0 }}>
+            manifest.json が見つかりません。新規作成フォームは Phase 2 で実装予定。
           </p>
-          <ResetCartridgeButton appId={c.id} />
-        </section>
-      }
-    />
+        )}
+        <p style={{ fontSize: 11, color: '#64748b', marginTop: 12, marginBottom: 0 }}>
+          ※ 現状は読み取り専用です。編集は <code>cartridges/{c.id}/manifest.json</code> を直接書き換えてください。
+        </p>
+      </section>
+
+      <AiDevPanel appId={c.id} path={c.path} />
+
+      <section style={{
+        ...panelStyle,
+        background: '#1a2436',
+        border: '1px dashed #475569',
+      }}>
+        <div style={{ ...labelStyle, color: '#94a3b8' }}>
+          開発の進め方
+        </div>
+        <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.9, color: '#cbd5e1' }}>
+          <li>上の「<strong>エクスプローラーで開く</strong>」でフォルダを開く</li>
+          <li>そのフォルダを <strong>Claude Code</strong> で開いて開発を依頼する<br/>
+            <span style={{ fontSize: 11, color: '#64748b' }}>
+              （フォルダ内の <code>CLAUDE.md</code> を AI が読み、まずロールと DB 要否を確認します）
+            </span>
+          </li>
+          <li>下の「▶ ローカルプレイ」で動作確認</li>
+        </ol>
+      </section>
+
+      <section style={{ ...panelStyle, borderColor: c.manifest?.studioCompatible === false ? '#ef4444' : '#60a5fa' }}>
+        <div style={{ ...labelStyle, color: c.manifest?.studioCompatible === false ? '#ef4444' : '#60a5fa' }}>
+          ▶ ローカルプレイ (Phase 1)
+        </div>
+        {c.manifest?.studioCompatible === false ? (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 14, color: '#ef4444', fontWeight: 600 }}>Studio 非対応カートリッジ</div>
+            <p style={{ fontSize: 13, color: '#94a3b8', margin: '8px 0 0' }}>
+              {c.manifest.studioCompatibleNote ?? 'このカートリッジは規約違反の依存があるため Studio で起動できません。'}
+            </p>
+          </div>
+        ) : c.hasRoutes ? (
+          <PlayButton appId={c.id} />
+        ) : (
+          <p style={{ fontSize: 13, color: '#94a3b8', margin: '8px 0 0' }}>
+            routes/ がないため起動できません
+          </p>
+        )}
+        <p style={{ fontSize: 12, color: '#64748b', margin: '12px 0 0' }}>
+          DB は PGlite ファイル永続化。リセットは <code>studio/.studio-db/</code> を削除。
+        </p>
+        <ResetCartridgeButton appId={c.id} />
+      </section>
+    </>
   )
 
   // ───────── プレビューモード (Phase 2) のコンテンツ ─────────

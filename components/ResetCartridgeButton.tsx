@@ -4,17 +4,14 @@ import { useState } from 'react'
 
 type Props = { appId: string }
 
-const STEP_STORAGE_KEY = (appId: string) => `appharbor_studio_step_${appId}`
-
 /**
- * カートリッジを Step ① に戻すボタン（アコーディオン折りたたみ）。
+ * カートリッジの「マウントファイル + PGlite データ」を初期化するボタン（アコーディオン折りたたみ）。
  *
  * 通常は「デプロイ完了で自動リセット」が効くので隠しておき、
  * 自動が動かない・キャッシュ事故の保険として開けるようにする。
  *
  * - studio/app/org/[slug]/apps/<id>/ のマウント先を削除
  * - PGlite のカートリッジテーブルを DROP → schema.sql で再作成
- * - localStorage のステップを 1 に戻す
  * - ページ再読み込み
  *
  * cartridges/<id>/ ソースと git 履歴は触らない。
@@ -26,10 +23,9 @@ export function ResetCartridgeButton({ appId }: Props) {
   const handleReset = async () => {
     if (busy) return
     if (!confirm(
-      `「${appId}」を Step ① の状態にリセットしますか?\n\n` +
+      `「${appId}」をリセットしますか?\n\n` +
       '・プレビュー用のマウントファイルを削除\n' +
-      '・PGlite のテーブル（スコア等）をクリア\n' +
-      '・ステップ進捗を①に戻す\n\n' +
+      '・PGlite のテーブル（スコア等）をクリア\n\n' +
       '※ ソースコード（cartridges/）と Git 履歴は影響を受けません。',
     )) return
 
@@ -45,7 +41,6 @@ export function ResetCartridgeButton({ appId }: Props) {
         setBusy(false)
         return
       }
-      try { localStorage.setItem(STEP_STORAGE_KEY(appId), '1') } catch { /* ignore */ }
       window.location.reload()
     } catch (e) {
       setError((e as Error).message)
@@ -75,7 +70,7 @@ export function ResetCartridgeButton({ appId }: Props) {
         borderRadius: 6,
       }}>
         <p style={{ margin: '0 0 8px', lineHeight: 1.7, color: '#94a3b8' }}>
-          マウント済みファイルと PGlite データを消し、Step ① に戻します。
+          マウント済みファイルと PGlite データを初期化します。
           <strong style={{ color: '#cbd5e1' }}>ソースコードと Git 履歴は消えません。</strong>
         </p>
         <button
@@ -92,7 +87,7 @@ export function ResetCartridgeButton({ appId }: Props) {
             cursor: busy ? 'wait' : 'pointer',
           }}
         >
-          {busy ? 'リセット中...' : '🔄 Step ① に戻す'}
+          {busy ? 'リセット中...' : '🔄 初期化する'}
         </button>
         {error && (
           <div style={{

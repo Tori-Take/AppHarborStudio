@@ -3,8 +3,6 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-const STEP_STORAGE_KEY = (appId: string) => `appharbor_studio_step_${appId}`
-
 /** 表示名や生入力から ID 候補を作る（半角英数とハイフンのみに整形） */
 function slugify(input: string): string {
   return input
@@ -53,8 +51,7 @@ export function Step1CreateForm() {
         setBusy(false)
         return
       }
-      // 作成成功: 次のステップ② に進める状態で遷移
-      try { localStorage.setItem(STEP_STORAGE_KEY(effectiveId), '2') } catch { /* ignore */ }
+      // 作成成功: カートリッジ詳細へ遷移
       router.push(`/cartridge/${encodeURIComponent(effectiveId)}`)
       router.refresh()
     } catch (e) {

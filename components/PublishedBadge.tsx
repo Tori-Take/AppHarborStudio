@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 
-const STEP_KEY = (appId: string) => `appharbor_studio_step_${appId}`
+const MODE_KEY = (appId: string) => `appharbor_studio_mode_${appId}`
 
 type DeployInfo = {
   appId: string
@@ -102,7 +102,7 @@ export function PublishedBadge({ appId }: { appId: string }) {
   if (!isPublished) return null
 
   const goToDevelop = () => {
-    try { localStorage.setItem(STEP_KEY(appId), '2') } catch { /* ignore */ }
+    try { localStorage.setItem(MODE_KEY(appId), 'develop') } catch { /* ignore */ }
     window.location.reload()
   }
 
@@ -163,7 +163,7 @@ export function PublishedBadge({ appId }: { appId: string }) {
           ⚙ 管理画面
         </a>
         <button onClick={goToDevelop} style={btnPrimary}>
-          ✏️ 次の修正に入る → Step ②
+          ✏️ 次の修正に入る (開発モードへ)
         </button>
       </div>
       {installed === false && (

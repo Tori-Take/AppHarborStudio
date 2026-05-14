@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { useFullscreenMode } from '@/lib/use-fullscreen-mode'
 import { PhaseIndicator } from '@/components/PhaseIndicator'
 
@@ -33,8 +33,6 @@ async function restartStudioDev(setPhase: (p: RestartPhase) => void): Promise<bo
   return false
 }
 
-const STEP_STORAGE_KEY = (appId: string) => `appharbor_studio_step_${appId}`
-
 type DeployInfo = {
   branch: string
   lastCommit: { shortSha: string; date: string; subject: string } | null
@@ -48,14 +46,10 @@ type DeployInfo = {
  * プレビュー画面 (`/org/<slug>/apps/<appId>/...`) でのみ表示されるナビバー。
  * カートリッジ詳細ページ (`/cartridge/<appId>`) との行き来を補助する。
  *
- * - 「← カートリッジ詳細に戻る」: 現在いるステップ (Step 2 = 動作確認) のまま戻る
- * - 「次のステップへ →」: localStorage の step を +1 して詳細ページに遷移
- *
  * apps 一覧 (`/org/<slug>/apps`) では何も表示しない。
  */
 export function PreviewNav() {
   const pathname = usePathname()
-  const router = useRouter()
   const [fullscreenMode, setFullscreenMode] = useFullscreenMode()
 
   const m = pathname?.match(/^\/org\/[^/]+\/apps\/([^/]+)(?:\/.*)?$/)
@@ -101,15 +95,6 @@ export function PreviewNav() {
         ⛶ 全画面解除
       </button>
     )
-  }
-
-  const goNextStep = () => {
-    try {
-      const cur = Number(localStorage.getItem(STEP_STORAGE_KEY(appId)) ?? '2')
-      const next = Math.min(3, (Number.isFinite(cur) ? cur : 2) + 1)
-      localStorage.setItem(STEP_STORAGE_KEY(appId), String(next))
-    } catch { /* ignore */ }
-    router.push(`/cartridge/${encodeURIComponent(appId)}`)
   }
 
   const handleRestart = async () => {
@@ -263,22 +248,6 @@ export function PreviewNav() {
         }}
       >
         ⛶ 全画面表示
-      </button>
-
-      <button
-        onClick={goNextStep}
-        style={{
-          background: '#fbbf24',
-          color: '#1f2937',
-          border: 'none',
-          borderRadius: 4,
-          padding: '4px 12px',
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: 'pointer',
-        }}
-      >
-        次のステップへ →
       </button>
     </div>
   )
