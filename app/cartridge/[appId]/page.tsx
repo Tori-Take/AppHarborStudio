@@ -15,10 +15,13 @@ import { PublishedBadge } from '@/components/PublishedBadge'
 import { ReleasePipeline } from '@/components/ReleasePipeline'
 import { CartridgeWorkbench } from '@/components/CartridgeWorkbench'
 import { JustCreatedBanner } from '@/components/JustCreatedBanner'
+import { DangerZone } from '@/components/DangerZone'
 import { CopyButton } from '@/components/ui/copy-button'
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 
 /** db/schema.sql から create table 文を抽出（コメント除外） */
@@ -50,38 +53,50 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
   )
 
   // ───────── 開発モード (Phase 1) のコンテンツ ─────────
+  const manifestName        = (c.manifest?.name as string) ?? c.manifest?.displayName ?? c.id
+  const manifestDescription = c.manifest?.description != null ? String(c.manifest.description) : ''
+  const manifestVersion     = c.manifest?.version != null ? String(c.manifest.version) : ''
+
   const developSection = (
     <div className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">アプリ情報</CardTitle>
+          <CardDescription>
+            作成時の入力内容です。<strong>識別子は変更できません</strong>。
+            アプリ名や説明を変えたい時は <code className="rounded bg-muted px-1 text-xs">cartridges/{c.id}/manifest.json</code> を直接編集してください。
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {c.manifest ? (
-            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
-              <Row label="アプリ名">
-                {(c.manifest.name as string) ?? c.manifest.displayName ?? c.id}
-              </Row>
-              <Row label="識別子">
-                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{c.id}</code>
-              </Row>
-              {c.manifest.description != null && String(c.manifest.description) && (
-                <Row label="説明">{String(c.manifest.description)}</Row>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="info-name">アプリ名</Label>
+                <Input id="info-name" value={manifestName} disabled />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="info-id">識別子</Label>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 text-sm text-muted-foreground">/org/&lt;org&gt;/apps/</span>
+                  <Input id="info-id" value={c.id} disabled className="font-mono" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="info-desc">説明</Label>
+                <Input id="info-desc" value={manifestDescription} disabled placeholder="(未設定)" />
+              </div>
+              {manifestVersion && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="info-version">バージョン</Label>
+                  <Input id="info-version" value={`v${manifestVersion}`} disabled className="font-mono w-32" />
+                </div>
               )}
-              {c.manifest.version != null && (
-                <Row label="バージョン">
-                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">v{String(c.manifest.version)}</code>
-                </Row>
-              )}
-            </dl>
+            </div>
           ) : (
             <p className="text-sm text-destructive">
               manifest.json が見つかりません。
             </p>
           )}
-          <p className="mt-3 text-xs text-muted-foreground">
-            ※ 読み取り専用。編集は <code className="rounded bg-muted px-1 text-xs">cartridges/{c.id}/manifest.json</code> を直接書き換えてください。
-          </p>
         </CardContent>
       </Card>
 
@@ -140,6 +155,8 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
           <ResetCartridgeButton appId={c.id} />
         </CardContent>
       </Card>
+
+      <DangerZone appId={c.id} displayName={manifestName} />
     </div>
   )
 
@@ -326,15 +343,6 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
         releaseSection={releaseSection}
       />
     </div>
-  )
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <>
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd>{children}</dd>
-    </>
   )
 }
 
