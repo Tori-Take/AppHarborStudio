@@ -1,42 +1,35 @@
 'use client'
 
+import { Package, Download } from 'lucide-react'
+import {
+  Card, CardContent, CardDescription, CardHeader, CardTitle,
+} from '@/components/ui/card'
+import { buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+
 export function ExportButton({ appId }: { appId: string }) {
   return (
-    <section style={panelStyle}>
-      <div style={labelStyle}>📦 配布パッケージ</div>
-      <p style={{ fontSize: 12, color: '#94a3b8', margin: '0 0 12px' }}>
-        このカートリッジを <code>.appcart.json</code> ファイルとして出力します。
-        AppHarbor の「JSON で取り込み」から install できます。
-      </p>
-      <a
-        href={`/api/cartridges/${encodeURIComponent(appId)}/export`}
-        download
-        style={{
-          display: 'inline-block',
-          background: '#fbbf24', color: '#1f2937',
-          borderRadius: 6, padding: '8px 16px',
-          fontSize: 13, fontWeight: 600, textDecoration: 'none',
-        }}
-      >
-        ⬇ .appcart.json をダウンロード
-      </a>
-    </section>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Package className="h-4 w-4" />
+          配布パッケージ
+        </CardTitle>
+        <CardDescription>
+          このカートリッジを <code className="rounded bg-muted px-1 text-xs">.appcart.json</code> ファイルとして出力します。
+          AppHarbor の「JSON で取り込み」から install できます。
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <a
+          href={`/api/cartridges/${encodeURIComponent(appId)}/export`}
+          download
+          className={cn(buttonVariants(), 'gap-1.5')}
+        >
+          <Download className="h-4 w-4" />
+          .appcart.json をダウンロード
+        </a>
+      </CardContent>
+    </Card>
   )
-}
-
-const panelStyle: React.CSSProperties = {
-  background: '#1e293b',
-  border: '1px solid #334155',
-  borderRadius: 8,
-  padding: 16,
-  marginBottom: 12,
-}
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 12,
-  color: '#94a3b8',
-  textTransform: 'uppercase',
-  letterSpacing: 0.5,
-  marginBottom: 8,
-  fontWeight: 600,
 }

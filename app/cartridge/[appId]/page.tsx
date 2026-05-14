@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
+import { ArrowLeft, BookOpen, Database, FolderOpen, AlertTriangle, FileCheck2, Play } from 'lucide-react'
 import { getCartridge } from '@/lib/cartridge-scanner'
 import { LintPanel } from '@/components/LintPanel'
 import { ExportButton } from '@/components/ExportButton'
@@ -14,6 +15,11 @@ import { PublishedBadge } from '@/components/PublishedBadge'
 import { ReleasePipeline } from '@/components/ReleasePipeline'
 import { CartridgeWorkbench } from '@/components/CartridgeWorkbench'
 import { CopyButton } from '@/components/ui/copy-button'
+import {
+  Card, CardContent, CardDescription, CardHeader, CardTitle,
+} from '@/components/ui/card'
+import { buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 /** db/schema.sql から create table 文を抽出（コメント除外） */
 function extractTablesFromSchema(cartridgePath: string): string[] {
@@ -44,243 +50,280 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
   )
 
   // ───────── 開発モード (Phase 1) のコンテンツ ─────────
-  // ステッパーをやめてフラットに並べる。ModeTabs で「開発フェーズ」と分かっているので
-  // sub-step による段階表示は冗長だった。
   const developSection = (
-    <>
-      <section style={panelStyle}>
-        <div style={labelStyle}>アプリ情報</div>
-        {c.manifest ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
-            <Row label="アプリ名">
-              <span style={{ color: '#e2e8f0' }}>
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">アプリ情報</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {c.manifest ? (
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
+              <Row label="アプリ名">
                 {(c.manifest.name as string) ?? c.manifest.displayName ?? c.id}
-              </span>
-            </Row>
-            <Row label="識別子">
-              <code style={{ color: '#fbbf24' }}>{c.id}</code>
-            </Row>
-            {c.manifest.description != null && String(c.manifest.description) && (
-              <Row label="説明">
-                <span style={{ color: '#cbd5e1' }}>{String(c.manifest.description)}</span>
               </Row>
-            )}
-            {c.manifest.version != null && (
-              <Row label="バージョン">
-                <code style={{ color: '#94a3b8' }}>v{String(c.manifest.version)}</code>
+              <Row label="識別子">
+                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{c.id}</code>
               </Row>
-            )}
-          </div>
-        ) : (
-          <p style={{ fontSize: 13, color: '#fca5a5', margin: 0 }}>
-            manifest.json が見つかりません。新規作成フォームは Phase 2 で実装予定。
+              {c.manifest.description != null && String(c.manifest.description) && (
+                <Row label="説明">{String(c.manifest.description)}</Row>
+              )}
+              {c.manifest.version != null && (
+                <Row label="バージョン">
+                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">v{String(c.manifest.version)}</code>
+                </Row>
+              )}
+            </dl>
+          ) : (
+            <p className="text-sm text-destructive">
+              manifest.json が見つかりません。
+            </p>
+          )}
+          <p className="mt-3 text-xs text-muted-foreground">
+            ※ 読み取り専用。編集は <code className="rounded bg-muted px-1 text-xs">cartridges/{c.id}/manifest.json</code> を直接書き換えてください。
           </p>
-        )}
-        <p style={{ fontSize: 11, color: '#64748b', marginTop: 12, marginBottom: 0 }}>
-          ※ 現状は読み取り専用です。編集は <code>cartridges/{c.id}/manifest.json</code> を直接書き換えてください。
-        </p>
-      </section>
+        </CardContent>
+      </Card>
 
       <AiContextPanel appId={c.id} />
 
       <AiDevPanel appId={c.id} path={c.path} />
 
-      <section style={{
-        ...panelStyle,
-        background: '#1a2436',
-        border: '1px dashed #475569',
-      }}>
-        <div style={{ ...labelStyle, color: '#94a3b8' }}>
-          開発の進め方
-        </div>
-        <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.9, color: '#cbd5e1' }}>
-          <li>上の「<strong>🤖 AI 開発コンテキスト</strong>」を <strong>📋 コピー</strong></li>
-          <li>「<strong>エクスプローラーで開く</strong>」でフォルダを開く</li>
-          <li>そのフォルダを <strong>Claude Code</strong> で開き、コピーしたコンテキスト + やりたいことを貼り付けて依頼する<br/>
-            <span style={{ fontSize: 11, color: '#64748b' }}>
-              （AI が SDK 契約とこのカートリッジの規約を理解した状態で開発を始められます）
-            </span>
-          </li>
-          <li>下の「▶ ローカルプレイ」で動作確認</li>
-        </ol>
-      </section>
+      <Card className="border-dashed bg-muted/30">
+        <CardHeader>
+          <CardTitle className="text-base">開発の進め方</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ol className="ml-5 list-decimal space-y-2 text-sm">
+            <li>上の「<strong>AI 開発コンテキスト</strong>」を <strong>コピー</strong></li>
+            <li>「<strong>エクスプローラーで開く</strong>」でフォルダを開く</li>
+            <li>そのフォルダを <strong>Claude Code</strong> で開き、コピーしたコンテキスト + やりたいことを貼り付けて依頼<br/>
+              <span className="text-xs text-muted-foreground">
+                （AI が SDK 契約とこのカートリッジの規約を理解した状態で開発を始められます）
+              </span>
+            </li>
+            <li>下の「ローカルプレイ」で動作確認</li>
+          </ol>
+        </CardContent>
+      </Card>
 
-      <section style={{ ...panelStyle, borderColor: c.manifest?.studioCompatible === false ? '#ef4444' : '#60a5fa' }}>
-        <div style={{ ...labelStyle, color: c.manifest?.studioCompatible === false ? '#ef4444' : '#60a5fa' }}>
-          ▶ ローカルプレイ (Phase 1)
-        </div>
-        {c.manifest?.studioCompatible === false ? (
-          <div style={{ marginTop: 8 }}>
-            <div style={{ fontSize: 14, color: '#ef4444', fontWeight: 600 }}>Studio 非対応カートリッジ</div>
-            <p style={{ fontSize: 13, color: '#94a3b8', margin: '8px 0 0' }}>
-              {c.manifest.studioCompatibleNote ?? 'このカートリッジは規約違反の依存があるため Studio で起動できません。'}
+      <Card className={cn(
+        c.manifest?.studioCompatible === false ? 'border-destructive/40' : 'border-blue-500/40',
+      )}>
+        <CardHeader>
+          <CardTitle className={cn(
+            'flex items-center gap-2 text-base',
+            c.manifest?.studioCompatible === false ? 'text-destructive' : 'text-blue-600 dark:text-blue-400',
+          )}>
+            <Play className="h-4 w-4" />
+            ローカルプレイ (Phase 1)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {c.manifest?.studioCompatible === false ? (
+            <div>
+              <div className="font-semibold text-destructive">Studio 非対応カートリッジ</div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {c.manifest.studioCompatibleNote ?? 'このカートリッジは規約違反の依存があるため Studio で起動できません。'}
+              </p>
+            </div>
+          ) : c.hasRoutes ? (
+            <PlayButton appId={c.id} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              routes/ がないため起動できません
             </p>
-          </div>
-        ) : c.hasRoutes ? (
-          <PlayButton appId={c.id} />
-        ) : (
-          <p style={{ fontSize: 13, color: '#94a3b8', margin: '8px 0 0' }}>
-            routes/ がないため起動できません
+          )}
+          <p className="mt-3 text-xs text-muted-foreground">
+            DB は PGlite ファイル永続化。リセットは <code className="rounded bg-muted px-1 text-xs">studio/.studio-db/</code> を削除。
           </p>
-        )}
-        <p style={{ fontSize: 12, color: '#64748b', margin: '12px 0 0' }}>
-          DB は PGlite ファイル永続化。リセットは <code>studio/.studio-db/</code> を削除。
-        </p>
-        <ResetCartridgeButton appId={c.id} />
-      </section>
-    </>
+          <ResetCartridgeButton appId={c.id} />
+        </CardContent>
+      </Card>
+    </div>
   )
 
   // ───────── プレビューモード (Phase 2) のコンテンツ ─────────
   const previewSection = (
-    <>
-      <section style={{
-        ...panelStyle,
-        background: 'rgba(251, 191, 36, 0.06)',
-        border: '1px solid rgba(251, 191, 36, 0.35)',
-      }}>
-        <div style={{ ...labelStyle, color: '#fbbf24' }}>
-          🎬 Phase 2 · Studio Deploy で共有
-        </div>
-        <p style={{ fontSize: 13, color: '#cbd5e1', margin: '0 0 8px', lineHeight: 1.7 }}>
-          このモードでは <strong>git push</strong> 後の Studio Deploy (Vercel) を確認します。
-          クライアントレビューやチーム内デモに使う共有 URL の状態をチェックしてください。
-        </p>
-        <ul style={{ margin: '6px 0 0', paddingLeft: 20, fontSize: 12, color: '#94a3b8', lineHeight: 1.8 }}>
-          <li>DB は Supabase <code>studio</code> スキーマ (Studio 利用者全員で共有)</li>
-          <li>認証は Cookie のモックユーザー (共有プロファイル)</li>
-          <li>変更を反映するには <strong>git push → Vercel デプロイ</strong> を待つ</li>
-        </ul>
-      </section>
+    <div className="space-y-4">
+      <Card className="border-amber-500/40 bg-amber-500/5">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base text-amber-700 dark:text-amber-400">
+            🎬 Phase 2 · Studio Deploy で共有
+          </CardTitle>
+          <CardDescription>
+            このモードでは <strong>git push</strong> 後の Studio Deploy (Vercel) を確認します。
+            クライアントレビューやチーム内デモに使う共有 URL の状態をチェックしてください。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ul className="ml-5 list-disc space-y-1 text-xs text-muted-foreground">
+            <li>DB は Supabase <code className="rounded bg-muted px-1">studio</code> スキーマ (Studio 利用者全員で共有)</li>
+            <li>認証は Cookie のモックユーザー (共有プロファイル)</li>
+            <li>変更を反映するには <strong>git push → Vercel デプロイ</strong> を待つ</li>
+          </ul>
+        </CardContent>
+      </Card>
 
       <PublishedBadge appId={c.id} />
       <DeployInfoPanel appId={c.id} />
-    </>
+    </div>
   )
 
   // ───────── リリースモード (Phase 3) のコンテンツ ─────────
   const releaseSection = (
-    <>
-      <section style={{
-        ...panelStyle,
-        background: 'rgba(52, 211, 153, 0.06)',
-        border: '1px solid rgba(52, 211, 153, 0.35)',
-      }}>
-        <div style={{ ...labelStyle, color: '#34d399' }}>
-          🚀 Phase 3 · AppHarbor 本番に昇格
-        </div>
-        <p style={{ fontSize: 13, color: '#cbd5e1', margin: '0 0 8px', lineHeight: 1.7 }}>
-          このモードでは <strong>AppHarbor 本番</strong> へのリリース準備状況を確認します。
-          以下のチェックを通過したら <code>cartridges-registry.yaml</code> に version を追記して PR を出してください。
-        </p>
-        <ol style={{ margin: '6px 0 0', paddingLeft: 20, fontSize: 12, color: '#94a3b8', lineHeight: 1.9 }}>
-          <li>規約チェック (Lint) を通す</li>
-          <li>カートリッジをエクスポートする</li>
-          <li>AppHarbor 本体リポジトリの <code>cartridges-registry.yaml</code> を更新</li>
-          <li>本体側で <code>cartridge:fetch</code> → migration 生成 → push</li>
-        </ol>
-      </section>
+    <div className="space-y-4">
+      <Card className="border-emerald-500/40 bg-emerald-500/5">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base text-emerald-700 dark:text-emerald-400">
+            🚀 Phase 3 · AppHarbor 本番に昇格
+          </CardTitle>
+          <CardDescription>
+            このモードでは <strong>AppHarbor 本番</strong> へのリリース準備状況を確認します。
+            以下のチェックを通過したら <code className="rounded bg-muted px-1">cartridges-registry.yaml</code> に version を追記して PR を出してください。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ol className="ml-5 list-decimal space-y-1 text-xs text-muted-foreground">
+            <li>規約チェック (Lint) を通す</li>
+            <li>カートリッジをエクスポートする</li>
+            <li>AppHarbor 本体リポジトリの <code className="rounded bg-muted px-1">cartridges-registry.yaml</code> を更新</li>
+            <li>本体側で <code className="rounded bg-muted px-1">cartridge:fetch</code> → migration 生成 → push</li>
+          </ol>
+        </CardContent>
+      </Card>
 
       <LintPanel appId={c.id} />
 
       <ExportButton appId={c.id} />
 
       {c.manifest && (
-        <section style={panelStyle}>
-          <details style={{ fontSize: 12 }}>
-            <summary style={{ cursor: 'pointer', userSelect: 'none', color: '#94a3b8' }}>
-              manifest.json を表示
-            </summary>
-            <pre style={{
-              marginTop: 10, fontSize: 12, color: '#e2e8f0',
-              background: '#0f172a', border: '1px solid #334155',
-              borderRadius: 6, padding: 12, overflow: 'auto',
-              fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
-            }}>
-              {JSON.stringify(c.manifest, null, 2)}
-            </pre>
-          </details>
-        </section>
+        <Card>
+          <CardContent className="py-4">
+            <details className="text-sm">
+              <summary className="cursor-pointer select-none text-muted-foreground">
+                manifest.json を表示
+              </summary>
+              <pre className="mt-3 overflow-auto rounded-md border bg-muted/30 p-3 font-mono text-xs">
+                {JSON.stringify(c.manifest, null, 2)}
+              </pre>
+            </details>
+          </CardContent>
+        </Card>
       )}
-    </>
+    </div>
   )
 
   return (
-    <main style={{ maxWidth: 960, margin: '0 auto', padding: '32px 24px 64px' }}>
-      <Link href="/" style={{ fontSize: 13, color: '#fbbf24', textDecoration: 'none' }}>← カートリッジ一覧へ戻る</Link>
+    <div className="p-8 max-w-3xl mx-auto">
 
-      <header style={{ marginTop: 16, marginBottom: 24 }}>
-        <h1 style={{ fontSize: 24, margin: 0 }}>
+      <div className="mb-6 flex items-center justify-between">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          カートリッジ一覧に戻る
+        </Link>
+        <Link
+          href={`/cartridge/${encodeURIComponent(c.id)}/getting-started`}
+          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
+        >
+          <BookOpen className="h-3.5 w-3.5" />
+          始め方ガイド
+        </Link>
+      </div>
+
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold flex items-baseline gap-3">
           {c.manifest?.displayName ?? c.id}
-          <span style={{ color: '#64748b', fontSize: 14, marginLeft: 12, fontWeight: 400 }}>{c.id}</span>
+          <span className="text-sm font-normal text-muted-foreground">{c.id}</span>
         </h1>
         {c.manifest?.description && (
-          <p style={{ color: '#94a3b8', fontSize: 14, marginTop: 6 }}>{c.manifest.description}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{c.manifest.description}</p>
         )}
       </header>
 
-      <ReleasePipeline appId={c.id} />
+      <div className="mb-6">
+        <ReleasePipeline appId={c.id} />
+      </div>
 
-      <section style={panelStyle}>
-        <div style={labelStyle}>パス</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <code style={{ flex: 1, fontSize: 12, color: '#fbbf24', wordBreak: 'break-all' }}>{c.path}</code>
-          <CopyButton text={c.path} label="コピー" />
-        </div>
-      </section>
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <FolderOpen className="h-4 w-4" />
+            パス
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+            <code className="flex-1 truncate font-mono text-sm">{c.path}</code>
+            <CopyButton text={c.path} label="コピー" />
+          </div>
+        </CardContent>
+      </Card>
 
-      <section style={panelStyle}>
-        <div style={labelStyle}>構成</div>
-        <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.8 }}>
-          <li>routes/: {c.hasRoutes ? '✅ あり' : '❌ なし'}</li>
-          <li>db/: {c.hasDb ? '✅ あり' : '❌ なし'}</li>
-          <li>manifest.json: {c.manifest ? '✅ あり' : c.error ? `❌ エラー: ${c.error}` : '❌ なし'}</li>
-        </ul>
-      </section>
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <FileCheck2 className="h-4 w-4" />
+            構成
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="space-y-1.5 text-sm">
+            <ConfigRow ok={c.hasRoutes} label="routes/" />
+            <ConfigRow ok={c.hasDb}     label="db/" />
+            <ConfigRow ok={!!c.manifest} label="manifest.json" errorText={c.error} />
+          </ul>
+        </CardContent>
+      </Card>
 
       {/* DB 接続必要バナー: schema.sql に create table がある場合 */}
       {needsDb && (
-        <section style={{
-          ...panelStyle,
-          background: '#1c2c20',
-          border: '1px solid #10b981',
-        }}>
-          <div style={{ ...labelStyle, color: '#10b981' }}>
-            🗄 このアプリは DB 接続が必要です
-          </div>
-          <p style={{ fontSize: 13, color: '#cbd5e1', margin: '0 0 8px', lineHeight: 1.7 }}>
-            <code style={{ color: '#fbbf24' }}>db/schema.sql</code> に
-            <strong> {schemaTables.length} 個</strong>のテーブル定義があります。
-            <strong>本番デプロイ後、AppHarbor の「DB セットアップ」ダイアログから Supabase に SQL を適用してください。</strong>
-          </p>
-          <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontSize: 12, color: '#94a3b8', lineHeight: 1.8 }}>
-            {schemaTables.map((t) => {
-              const declared = manifestTables.includes(t)
-              return (
-                <li key={t}>
-                  <code style={{ color: '#fbbf24' }}>{t}</code>
-                  {declared
-                    ? <span style={{ color: '#10b981', marginLeft: 8 }}>✓ manifest 宣言済み</span>
-                    : <span style={{ color: '#f59e0b', marginLeft: 8 }}>⚠ manifest.tables に未宣言</span>
-                  }
-                </li>
-              )
-            })}
-          </ul>
-          {tablesOutOfSync && (
-            <div style={{
-              marginTop: 12, padding: 10,
-              background: '#3f2a0e', border: '1px solid #f59e0b',
-              borderRadius: 6, fontSize: 12, color: '#fbbf24',
-            }}>
-              <strong>⚠ manifest.json の <code>tables</code> 配列を schema.sql と一致させてください。</strong><br/>
-              推奨値:
-              <code style={{ display: 'block', marginTop: 6, padding: 8, background: '#0f172a', borderRadius: 4, color: '#e2e8f0' }}>
-                "tables": {JSON.stringify(schemaTables)}
-              </code>
-            </div>
-          )}
-        </section>
+        <Card className="mb-4 border-emerald-500/40 bg-emerald-500/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base text-emerald-700 dark:text-emerald-400">
+              <Database className="h-4 w-4" />
+              このアプリは DB 接続が必要です
+            </CardTitle>
+            <CardDescription>
+              <code className="rounded bg-muted px-1">db/schema.sql</code> に
+              <strong> {schemaTables.length} 個</strong>のテーブル定義があります。
+              <strong>本番デプロイ後、AppHarbor の「DB セットアップ」ダイアログから Supabase に SQL を適用してください。</strong>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="ml-5 list-disc space-y-1 text-xs">
+              {schemaTables.map((t) => {
+                const declared = manifestTables.includes(t)
+                return (
+                  <li key={t}>
+                    <code className="rounded bg-muted px-1 font-mono text-xs">{t}</code>
+                    {declared
+                      ? <span className="ml-2 text-emerald-600 dark:text-emerald-500">✓ manifest 宣言済み</span>
+                      : <span className="ml-2 text-amber-600 dark:text-amber-500">⚠ manifest.tables に未宣言</span>
+                    }
+                  </li>
+                )
+              })}
+            </ul>
+            {tablesOutOfSync && (
+              <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
+                  <div>
+                    <strong>manifest.json の <code className="rounded bg-muted px-1">tables</code> 配列を schema.sql と一致させてください。</strong>
+                    <br />推奨値:
+                    <code className="mt-2 block rounded border bg-muted/30 p-2 font-mono text-xs">
+                      &quot;tables&quot;: {JSON.stringify(schemaTables)}
+                    </code>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       <CartridgeWorkbench
@@ -289,31 +332,31 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
         previewSection={previewSection}
         releaseSection={releaseSection}
       />
-    </main>
+    </div>
   )
-}
-
-const panelStyle: React.CSSProperties = {
-  background: '#1e293b',
-  border: '1px solid #334155',
-  borderRadius: 8,
-  padding: 16,
-  marginBottom: 12,
-}
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 12,
-  color: '#94a3b8',
-  textTransform: 'uppercase',
-  letterSpacing: 0.5,
-  marginBottom: 8,
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', gap: 12 }}>
-      <span style={{ minWidth: 96, color: '#94a3b8' }}>{label}</span>
-      <span style={{ flex: 1 }}>{children}</span>
-    </div>
+    <>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd>{children}</dd>
+    </>
+  )
+}
+
+function ConfigRow({ ok, label, errorText }: { ok: boolean; label: string; errorText?: string | null }) {
+  return (
+    <li className="flex items-center gap-2">
+      {ok
+        ? <span className="text-emerald-600 dark:text-emerald-500">✓</span>
+        : <span className="text-muted-foreground">○</span>}
+      <code className="font-mono text-xs">{label}</code>
+      {!ok && (
+        <span className="text-xs text-muted-foreground">
+          {errorText ? `エラー: ${errorText}` : '無し'}
+        </span>
+      )}
+    </li>
   )
 }

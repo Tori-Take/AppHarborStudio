@@ -1,18 +1,15 @@
 'use client'
 
 import { useState } from 'react'
+import { AlertTriangle, RotateCcw } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 type Props = { appId: string }
 
 /**
- * カートリッジの「マウントファイル + PGlite データ」を初期化するボタン（アコーディオン折りたたみ）。
+ * カートリッジの「マウントファイル + PGlite データ」を初期化するボタン（折りたたみ）。
  *
- * 通常は「デプロイ完了で自動リセット」が効くので隠しておき、
- * 自動が動かない・キャッシュ事故の保険として開けるようにする。
- *
- * - studio/app/org/[slug]/apps/<id>/ のマウント先を削除
- * - PGlite のカートリッジテーブルを DROP → schema.sql で再作成
- * - ページ再読み込み
+ * 通常は自動リセットが効くので隠しておき、キャッシュ事故等の保険として開ける。
  *
  * cartridges/<id>/ ソースと git 履歴は触らない。
  */
@@ -49,52 +46,29 @@ export function ResetCartridgeButton({ appId }: Props) {
   }
 
   return (
-    <details style={{
-      marginTop: 8,
-      fontSize: 12,
-      color: '#64748b',
-    }}>
-      <summary style={{
-        cursor: 'pointer',
-        userSelect: 'none',
-        padding: '4px 0',
-      }}>
-        ⚠ 開発をリセット（自動リセットが効かない時用）
+    <details className="mt-2 text-xs text-muted-foreground">
+      <summary className="inline-flex cursor-pointer select-none items-center gap-1 py-1 hover:text-foreground">
+        <AlertTriangle className="h-3 w-3" />
+        開発をリセット（自動リセットが効かない時用）
       </summary>
 
-      <div style={{
-        marginTop: 8,
-        padding: 10,
-        background: '#1e293b',
-        border: '1px solid #334155',
-        borderRadius: 6,
-      }}>
-        <p style={{ margin: '0 0 8px', lineHeight: 1.7, color: '#94a3b8' }}>
+      <div className="mt-2 rounded-md border bg-muted/30 p-3">
+        <p className="mb-2 leading-relaxed">
           マウント済みファイルと PGlite データを初期化します。
-          <strong style={{ color: '#cbd5e1' }}>ソースコードと Git 履歴は消えません。</strong>
+          <strong className="text-foreground">ソースコードと Git 履歴は消えません。</strong>
         </p>
-        <button
+        <Button
+          variant="destructive"
+          size="sm"
           onClick={handleReset}
           disabled={busy}
-          style={{
-            background: busy ? '#64748b' : 'transparent',
-            color: busy ? '#fee2e2' : '#fca5a5',
-            border: '1px solid #ef4444',
-            borderRadius: 4,
-            padding: '4px 10px',
-            fontSize: 11,
-            fontWeight: 600,
-            cursor: busy ? 'wait' : 'pointer',
-          }}
+          className="gap-1.5"
         >
-          {busy ? 'リセット中...' : '🔄 初期化する'}
-        </button>
+          <RotateCcw className="h-3.5 w-3.5" />
+          {busy ? 'リセット中...' : '初期化する'}
+        </Button>
         {error && (
-          <div style={{
-            marginTop: 6, padding: '4px 8px',
-            color: '#fca5a5', background: '#ef444415',
-            border: '1px solid #ef4444', borderRadius: 4, fontSize: 11,
-          }}>
+          <div className="mt-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
             {error}
           </div>
         )}

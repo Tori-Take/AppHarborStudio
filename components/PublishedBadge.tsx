@@ -1,6 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { PartyPopper, ExternalLink, Settings, Pencil, Package, Gamepad2 } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 const MODE_KEY = (appId: string) => `appharbor_studio_mode_${appId}`
 
@@ -14,53 +18,29 @@ type DeployInfo = {
 }
 
 /**
- * 「✓ 公開完了」バッジ。
+ * 「公開完了」バッジ。
  *
  * ローカル最終 commit と本番 git-sha をライブで比較し、
  * 一致 + 未コミット/未 push なし、の時だけ表示する。
- *
- * 修正を加えて未コミットになる、または push 後に Vercel ビルド中なら
- * sha がずれて自然に非表示になる。
  */
 export function PublishedBadge({ appId }: { appId: string }) {
-  const [info, setInfo]      = useState<DeployInfo | null>(null)
+  const [info, setInfo]       = useState<DeployInfo | null>(null)
   const [prodSha, setProdSha] = useState<string | null>(null)
   const [installed, setInstalled] = useState<boolean | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    let pollTimer: ReturnType<typeof setTimeout> | null = null
-
     const loadDeployInfo = () => {
       fetch(`/api/cartridges/${encodeURIComponent(appId)}/deploy-info`)
         .then((r) => r.ok ? r.json() : null)
         .then((j) => { if (!cancelled && j) setInfo(j) })
         .catch(() => {})
     }
-
-    const pollProdSha = async (info: DeployInfo) => {
-      try {
-        const url = `${info.production.baseUrl.replace(/\/$/, '')}/api/git-sha?_=${Date.now()}`
-        const res = await fetch(url, { cache: 'no-store' })
-        if (!res.ok) throw new Error()
-        const j = await res.json() as { sha: string }
-        if (!cancelled) setProdSha(j.sha)
-      } catch { /* ignore */ }
-    }
-
     loadDeployInfo()
-
-    // info が来たら本番 sha も並列で取り、以降 30 秒毎に更新
     const checkInterval = setInterval(loadDeployInfo, 30000)
-
-    return () => {
-      cancelled = true
-      if (pollTimer) clearTimeout(pollTimer)
-      clearInterval(checkInterval)
-    }
+    return () => { cancelled = true; clearInterval(checkInterval) }
   }, [appId])
 
-  // info が更新されるたびに本番 sha と install 状態を取りに行く
   useEffect(() => {
     if (!info) return
     let cancelled = false
@@ -91,9 +71,6 @@ export function PublishedBadge({ appId }: { appId: string }) {
 
   if (!info || !info.lastCommit || !prodSha) return null
 
-  // 同期済み判定: 本番 sha == リポジトリの HEAD commit + dirty/unpushed なし
-  // （カートリッジ最終 commit ではなく HEAD を使うのは、他のカートリッジや
-  //   Studio 側だけ変更された commit が本番にデプロイされても OK と扱うため）
   const isPublished =
     prodSha === info.repoHead &&
     info.dirtyFiles.length === 0 &&
@@ -107,71 +84,74 @@ export function PublishedBadge({ appId }: { appId: string }) {
   }
 
   const ago = describeAgo(new Date(info.lastCommit.date))
+  const base = info.production.baseUrl.replace(/\/$/, '')
 
   return (
-    <section style={{
-      background: '#0d2820',
-      border: '1px solid #10b981',
-      borderRadius: 8,
-      padding: 16,
-      marginBottom: 12,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 24 }}>🎉</span>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#10b981' }}>
-            ✓ 公開完了
-          </div>
-          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
-            <code style={{ color: '#fbbf24' }}>{info.lastCommit.shortSha}</code>
-            {' '}が本番で稼働中（commit: {ago}）
+    <Card className="border-emerald-500/40 bg-emerald-500/5">
+      <CardContent className="space-y-3 py-4">
+        <div className="flex items-center gap-3">
+          <PartyPopper className="h-8 w-8 shrink-0 text-emerald-600 dark:text-emerald-500" />
+          <div className="flex-1">
+            <div className="font-semibold text-emerald-700 dark:text-emerald-400">
+              公開完了
+            </div>
+            <div className="text-xs text-muted-foreground">
+              <code className="rounded bg-muted px-1 font-mono">{info.lastCommit.shortSha}</code>
+              {' '}が本番で稼働中（commit: {ago}）
+            </div>
           </div>
         </div>
-      </div>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-        {installed === false ? (
-          // 未インストール: 管理画面の install 動線へ誘導
+        <div className="flex flex-wrap gap-2">
+          {installed === false ? (
+            <a
+              href={`${base}/platform/apps`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
+              title="本番 AppHarbor にインストール"
+            >
+              <Package className="h-3.5 w-3.5" />
+              本番にインストール
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          ) : (
+            <a
+              href={`${base}/org/platform-preview/apps/${appId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
+              title="プレビュー組織でアプリ画面を開く"
+            >
+              <Gamepad2 className="h-3.5 w-3.5" />
+              本番で動作確認
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
           <a
-            href={`${info.production.baseUrl.replace(/\/$/, '')}/platform/apps`}
+            href={info.production.platformUrl}
             target="_blank"
             rel="noopener noreferrer"
-            style={btnLink}
-            title="本番 AppHarbor にこのカートリッジをインストール（apps テーブルへ登録）"
+            className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'gap-1.5')}
+            title="管理画面"
           >
-            📦 本番にインストール
+            <Settings className="h-3.5 w-3.5" />
+            管理画面
+            <ExternalLink className="h-3 w-3" />
           </a>
-        ) : (
-          // インストール済み or 不明（権限なしで取得失敗等）: 動作確認リンクを表示
-          <a
-            href={`${info.production.baseUrl.replace(/\/$/, '')}/org/platform-preview/apps/${appId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={btnLink}
-            title="プレビュー組織でアプリ画面を直接開く"
-          >
-            🎮 本番で動作確認
-          </a>
+          <Button onClick={goToDevelop} size="sm" className="gap-1.5">
+            <Pencil className="h-3.5 w-3.5" />
+            次の修正に入る (開発モードへ)
+          </Button>
+        </div>
+
+        {installed === false && (
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            ⓘ まだ AppHarbor 本体にインストールされていません。「本番にインストール」から登録すると動作確認ができるようになります。
+          </p>
         )}
-        <a
-          href={info.production.platformUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={btnGhost}
-          title="管理画面（設定・有効化組織）"
-        >
-          ⚙ 管理画面
-        </a>
-        <button onClick={goToDevelop} style={btnPrimary}>
-          ✏️ 次の修正に入る (開発モードへ)
-        </button>
-      </div>
-      {installed === false && (
-        <p style={{ fontSize: 11, color: '#fbbf24', marginTop: 8, marginBottom: 0 }}>
-          ⓘ まだ AppHarbor 本体にインストールされていません。「📦 本番にインストール」から登録すると動作確認ができるようになります。
-        </p>
-      )}
-    </section>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -185,27 +165,4 @@ function describeAgo(d: Date): string {
   if (hr  < 24)    return `${hr} 時間前`
   const day = Math.floor(hr / 24)
   return `${day} 日前`
-}
-
-const btnLink: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: 6,
-  background: '#0f172a', color: '#fbbf24',
-  border: '1px solid #334155', borderRadius: 6,
-  padding: '6px 12px', fontSize: 12,
-  textDecoration: 'none',
-}
-
-const btnGhost: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: 6,
-  background: 'transparent', color: '#94a3b8',
-  border: '1px solid #334155', borderRadius: 6,
-  padding: '6px 12px', fontSize: 12,
-  textDecoration: 'none',
-}
-
-const btnPrimary: React.CSSProperties = {
-  background: '#10b981', color: '#022c22',
-  border: 'none', borderRadius: 6,
-  padding: '6px 14px', fontSize: 12, fontWeight: 700,
-  cursor: 'pointer',
 }

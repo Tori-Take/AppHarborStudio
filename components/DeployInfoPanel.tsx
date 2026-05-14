@@ -1,6 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Satellite, RefreshCw, ExternalLink, GitBranch, FileText, Rocket, CheckCircle2, AlertTriangle, Send } from 'lucide-react'
+import {
+  Card, CardContent, CardHeader, CardTitle,
+} from '@/components/ui/card'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 import { DeployReadyWatcher } from './DeployReadyWatcher'
 
 type DeployInfo = {
@@ -46,9 +53,8 @@ export function DeployInfoPanel({ appId }: Props) {
       })
       const j = await res.json()
       if (res.ok) {
-        // push 成功後、Studio プレビュー用コピーも更新（HMR 強制込み）
         try { await fetch('/api/mount', { method: 'POST' }) } catch { /* ignore */ }
-        setPushResult({ ok: true, text: `✓ push 完了: ${j.commitHash ?? ''}（プレビューも更新済み）` })
+        setPushResult({ ok: true, text: `push 完了: ${j.commitHash ?? ''}（プレビューも更新済み）` })
         setPushMessage('')
         setRefreshTick((t) => t + 1)
       } else {
@@ -63,19 +69,29 @@ export function DeployInfoPanel({ appId }: Props) {
 
   if (error) {
     return (
-      <section style={panel}>
-        <div style={label}>📡 デプロイ情報</div>
-        <div style={{ fontSize: 13, color: '#fca5a5' }}>取得失敗: {error}</div>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Satellite className="h-4 w-4" />
+            デプロイ情報
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-destructive">取得失敗: {error}</CardContent>
+      </Card>
     )
   }
 
   if (!info) {
     return (
-      <section style={panel}>
-        <div style={label}>📡 デプロイ情報</div>
-        <div style={{ fontSize: 13, color: '#94a3b8' }}>読み込み中...</div>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Satellite className="h-4 w-4" />
+            デプロイ情報
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">読み込み中...</CardContent>
+      </Card>
     )
   }
 
@@ -84,197 +100,176 @@ export function DeployInfoPanel({ appId }: Props) {
   const inSync     = !hasDirty && !hasUnpush
 
   return (
-    <section style={panel}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <div style={label}>📡 デプロイ情報</div>
-        <button
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Satellite className="h-4 w-4" />
+          デプロイ情報
+        </CardTitle>
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => setRefreshTick((t) => t + 1)}
-          style={btnGhost}
+          className="gap-1.5"
           title="再取得"
         >
-          🔄 更新
-        </button>
-      </div>
+          <RefreshCw className="h-3.5 w-3.5" />
+          更新
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
 
-      {/* 同期状態の総合バッジ */}
-      <div style={{ marginBottom: 12 }}>
-        {inSync && <Badge color="#10b981">✓ ローカルと本番リポは同期</Badge>}
-        {hasDirty && <Badge color="#ef4444">⚠ 未コミットの変更 {info.dirtyFiles.length} 件</Badge>}
-        {hasUnpush && <Badge color="#f59e0b">⚠ 未 push コミット {info.unpushedCount} 件</Badge>}
-      </div>
-
-      {/* 詳細 */}
-      <Row label="ブランチ">
-        <code style={{ color: '#fbbf24' }}>{info.branch}</code>
-      </Row>
-
-      {info.lastCommit ? (
-        <Row label="最終 commit">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <div>
-              <code style={{ color: '#fbbf24' }}>{info.lastCommit.shortSha}</code>
-              <span style={{ color: '#64748b', marginLeft: 8 }}>
-                {info.lastCommit.date.slice(0, 19)}
-              </span>
-              <span style={{ color: '#64748b', marginLeft: 8 }}>
-                by {info.lastCommit.author}
-              </span>
-            </div>
-            <div style={{ color: '#cbd5e1', fontSize: 12 }}>
-              {info.lastCommit.subject}
-            </div>
-          </div>
-        </Row>
-      ) : (
-        <Row label="最終 commit">
-          <span style={{ color: '#94a3b8' }}>まだ commit がありません（git に追加されていない可能性）</span>
-        </Row>
-      )}
-
-      {hasDirty && (
-        <Row label="未コミットファイル">
-          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 11, color: '#fca5a5' }}>
-            {info.dirtyFiles.slice(0, 5).map((f) => <li key={f}><code>{f}</code></li>)}
-            {info.dirtyFiles.length > 5 && <li>...他 {info.dirtyFiles.length - 5} 件</li>}
-          </ul>
-        </Row>
-      )}
-
-      {/* push 操作: 未コミット or 未 push がある時のみ */}
-      {!inSync && (
-        <div style={{
-          marginTop: 14, paddingTop: 12, borderTop: '1px solid #334155',
-          display: 'flex', flexDirection: 'column', gap: 8,
-        }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'stretch' }}>
-            <input
-              value={pushMessage}
-              onChange={(e) => setPushMessage(e.target.value)}
-              placeholder={hasDirty ? `commit メッセージ（任意・空なら "feat: ${appId} 更新"）` : '未 push の commit を送信します'}
-              disabled={pushBusy || !hasDirty}
-              style={{
-                flex: 1, minWidth: 240,
-                background: '#0f172a', color: '#e2e8f0',
-                border: '1px solid #334155', borderRadius: 6,
-                padding: '6px 10px', fontSize: 12,
-              }}
-            />
-            <button onClick={handlePush} disabled={pushBusy} style={btnPush(pushBusy)}>
-              {pushBusy
-                ? '送信中...'
-                : hasDirty
-                  ? `🚀 コミット & push（${info.dirtyFiles.length} 件）`
-                  : `🚀 push（${info.unpushedCount} 件）`}
-            </button>
-          </div>
-          {pushResult && (
-            <div style={{
-              fontSize: 12, padding: '6px 10px', borderRadius: 4,
-              color: pushResult.ok ? '#10b981' : '#fca5a5',
-              background: pushResult.ok ? '#10b98115' : '#ef444415',
-              border: `1px solid ${pushResult.ok ? '#10b981' : '#ef4444'}`,
-              whiteSpace: 'pre-wrap',
-            }}>
-              {pushResult.text}
-            </div>
+        {/* 同期バッジ */}
+        <div className="flex flex-wrap gap-2">
+          {inSync && (
+            <span className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="h-3 w-3" /> ローカルと本番リポは同期
+            </span>
+          )}
+          {hasDirty && (
+            <span className="inline-flex items-center gap-1 rounded border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-xs font-semibold text-destructive">
+              <AlertTriangle className="h-3 w-3" /> 未コミット {info.dirtyFiles.length} 件
+            </span>
+          )}
+          {hasUnpush && (
+            <span className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="h-3 w-3" /> 未 push {info.unpushedCount} 件
+            </span>
           )}
         </div>
-      )}
 
-      {/* リンク類 */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14, paddingTop: 12, borderTop: '1px solid #334155' }}>
-        {info.github?.folderUrl && (
-          <a href={info.github.folderUrl} target="_blank" rel="noopener noreferrer" style={btnLink}>
-            📂 GitHub で開く
-          </a>
-        )}
-        {info.github?.commitUrl && info.lastCommit && (
-          <a href={info.github.commitUrl} target="_blank" rel="noopener noreferrer" style={btnLink}>
-            🔖 commit {info.lastCommit.shortSha} を見る
-          </a>
-        )}
-        <a href={info.production.platformUrl} target="_blank" rel="noopener noreferrer" style={btnLink}>
-          🚀 本番 AppHarbor で開く
-        </a>
-      </div>
+        {/* 詳細 */}
+        <div className="space-y-2">
+          <Row label="ブランチ">
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{info.branch}</code>
+          </Row>
 
-      {/* 本番監視（常時 ON で動作。デプロイ Ready で自動的にマウント・PGlite クリア） */}
-      {info.repoHead && (
-        <div style={{
-          marginTop: 14, paddingTop: 12, borderTop: '1px solid #334155',
-        }}>
-          <DeployReadyWatcher
-            appId={appId}
-            baseUrl={info.production.baseUrl}
-            localFullSha={info.repoHead}
-            enabled={true}
-          />
+          {info.lastCommit ? (
+            <Row label="最終 commit">
+              <div className="space-y-0.5">
+                <div className="flex flex-wrap items-baseline gap-2 text-xs">
+                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono">{info.lastCommit.shortSha}</code>
+                  <span className="text-muted-foreground">{info.lastCommit.date.slice(0, 19)}</span>
+                  <span className="text-muted-foreground">by {info.lastCommit.author}</span>
+                </div>
+                <div className="text-foreground/80">{info.lastCommit.subject}</div>
+              </div>
+            </Row>
+          ) : (
+            <Row label="最終 commit">
+              <span className="text-muted-foreground">まだ commit がありません（git に追加されていない可能性）</span>
+            </Row>
+          )}
+
+          {hasDirty && (
+            <Row label="未コミットファイル">
+              <ul className="ml-4 list-disc space-y-0.5 text-xs text-destructive">
+                {info.dirtyFiles.slice(0, 5).map((f) => (
+                  <li key={f}><code className="font-mono">{f}</code></li>
+                ))}
+                {info.dirtyFiles.length > 5 && <li>...他 {info.dirtyFiles.length - 5} 件</li>}
+              </ul>
+            </Row>
+          )}
         </div>
-      )}
 
-      <p style={{ fontSize: 11, color: '#64748b', margin: '10px 0 0' }}>
-        本番 URL は <code>STUDIO_PRODUCTION_URL</code> 環境変数で変更可（現在: {info.production.baseUrl}）。
-      </p>
-    </section>
+        {/* push 操作 */}
+        {!inSync && (
+          <div className="space-y-2 border-t pt-3">
+            <div className="flex flex-wrap gap-2">
+              <Input
+                value={pushMessage}
+                onChange={(e) => setPushMessage(e.target.value)}
+                placeholder={hasDirty ? `commit メッセージ（任意・空なら "feat: ${appId} 更新"）` : '未 push の commit を送信します'}
+                disabled={pushBusy || !hasDirty}
+                className="flex-1 min-w-[240px]"
+              />
+              <Button onClick={handlePush} disabled={pushBusy} className="gap-1.5">
+                <Send className="h-4 w-4" />
+                {pushBusy
+                  ? '送信中...'
+                  : hasDirty
+                    ? `コミット & push (${info.dirtyFiles.length} 件)`
+                    : `push (${info.unpushedCount} 件)`}
+              </Button>
+            </div>
+            {pushResult && (
+              <div className={cn(
+                'rounded-md border px-3 py-2 text-xs whitespace-pre-wrap',
+                pushResult.ok
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                  : 'border-destructive/40 bg-destructive/10 text-destructive',
+              )}>
+                {pushResult.text}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* リンク類 */}
+        <div className="flex flex-wrap gap-2 border-t pt-3">
+          {info.github?.folderUrl && (
+            <a
+              href={info.github.folderUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              GitHub で開く
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+          {info.github?.commitUrl && info.lastCommit && (
+            <a
+              href={info.github.commitUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              commit {info.lastCommit.shortSha}
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+          <a
+            href={info.production.platformUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
+          >
+            <Rocket className="h-3.5 w-3.5" />
+            本番 AppHarbor で開く
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+
+        {/* 本番監視 */}
+        {info.repoHead && (
+          <div className="border-t pt-3">
+            <DeployReadyWatcher
+              appId={appId}
+              baseUrl={info.production.baseUrl}
+              localFullSha={info.repoHead}
+              enabled={true}
+            />
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          本番 URL は <code className="rounded bg-muted px-1">STUDIO_PRODUCTION_URL</code> 環境変数で変更可（現在: {info.production.baseUrl}）。
+        </p>
+
+      </CardContent>
+    </Card>
   )
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', gap: 12, fontSize: 13, padding: '6px 0', borderBottom: '1px dashed #1e293b' }}>
-      <div style={{ color: '#94a3b8', minWidth: 100 }}>{label}</div>
-      <div style={{ flex: 1, color: '#e2e8f0' }}>{children}</div>
+    <div className="flex gap-3 border-b border-dashed border-border/50 pb-2 last:border-0 last:pb-0">
+      <div className="min-w-[7rem] text-muted-foreground">{label}</div>
+      <div className="flex-1">{children}</div>
     </div>
   )
-}
-
-function Badge({ children, color }: { children: React.ReactNode; color: string }) {
-  return (
-    <span style={{
-      display: 'inline-block',
-      marginRight: 8, marginBottom: 4,
-      padding: '3px 10px',
-      fontSize: 11, fontWeight: 600,
-      color, border: `1px solid ${color}`, borderRadius: 4,
-      background: `${color}15`,
-    }}>
-      {children}
-    </span>
-  )
-}
-
-const panel: React.CSSProperties = {
-  background: '#1e293b',
-  border: '1px solid #334155',
-  borderRadius: 8,
-  padding: 16,
-  marginBottom: 12,
-}
-
-const label: React.CSSProperties = {
-  fontSize: 12, color: '#94a3b8',
-  textTransform: 'uppercase', letterSpacing: 0.5,
-}
-
-const btnGhost: React.CSSProperties = {
-  background: 'transparent', color: '#94a3b8',
-  border: '1px solid #334155', borderRadius: 6,
-  padding: '4px 10px', fontSize: 11, cursor: 'pointer',
-}
-
-const btnPush = (busy: boolean): React.CSSProperties => ({
-  background: busy ? '#64748b' : '#fbbf24',
-  color: '#1f2937',
-  border: 'none', borderRadius: 6,
-  padding: '6px 14px', fontSize: 12, fontWeight: 700,
-  cursor: busy ? 'wait' : 'pointer',
-  whiteSpace: 'nowrap',
-})
-
-const btnLink: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: 6,
-  background: '#0f172a', color: '#fbbf24',
-  border: '1px solid #334155', borderRadius: 6,
-  padding: '6px 12px', fontSize: 12,
-  textDecoration: 'none',
 }
