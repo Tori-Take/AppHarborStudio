@@ -1,9 +1,9 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Check, Circle, Loader2 } from 'lucide-react'
+import { Check, Circle, Loader2, FolderOpen } from 'lucide-react'
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card'
@@ -29,12 +29,22 @@ function slugify(input: string): string {
  */
 export function Step1CreateForm() {
   const router = useRouter()
-  const [name, setName]   = useState('')
-  const [id, setId]       = useState('')
+  const [name, setName]     = useState('')
+  const [id, setId]         = useState('')
   const [idTouched, setIdTouched] = useState(false)
-  const [desc, setDesc]   = useState('')
-  const [busy, setBusy]   = useState(false)
-  const [err, setErr]     = useState<string | null>(null)
+  const [desc, setDesc]     = useState('')
+  const [parent, setParent] = useState('')  // 作成先 (空ならサーバの既定 = Studio の親)
+  const [picking, setPicking] = useState(false)
+  const [busy, setBusy]     = useState(false)
+  const [err, setErr]       = useState<string | null>(null)
+
+  // マウント時にサーバから既定の親フォルダを取得
+  useEffect(() => {
+    fetch('/api/studio-env')
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => { if (j?.defaultCartridgeParent) setParent(j.defaultCartridgeParent) })
+      .catch(() => {})
+  }, [])
 
   const effectiveId = idTouched ? id : slugify(name)
 
@@ -52,7 +62,12 @@ export function Step1CreateForm() {
       const res = await fetch('/api/cartridges/new', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: effectiveId, name: name.trim() || effectiveId, description: desc.trim() }),
+        body: JSON.stringify({
+          id:          effectiveId,
+          name:        name.trim() || effectiveId,
+          description: desc.trim(),
+          parentPath:  parent.trim() || undefined,
+        }),
       })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
@@ -65,6 +80,31 @@ export function Step1CreateForm() {
     } catch (e) {
       setErr((e as Error).message)
       setBusy(false)
+    }
+  }
+
+  const pickFolder = async () => {
+    if (picking || busy) return
+    setPicking(true)
+    try {
+      const res = await fetch('/api/fs/pick-folder', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          initialPath: parent || undefined,
+          title:       'カートリッジの親フォルダを選択 (この中に cart-<id>/ が作られます)',
+        }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(`フォルダ選択に失敗しました: ${j.error ?? `HTTP ${res.status}`}`)
+        return
+      }
+      if (j.ok && j.path) setParent(j.path)
+    } catch (e) {
+      alert(`フォルダ選択に失敗しました: ${(e as Error).message}`)
+    } finally {
+      setPicking(false)
     }
   }
 
@@ -154,6 +194,43 @@ export function Step1CreateForm() {
                 onChange={(e) => setDesc(e.target.value)}
                 disabled={busy}
               />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="parent">
+                作成先フォルダ
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  この中に <code className="rounded bg-muted px-1">cart-{effectiveId || '<id>'}</code> が作られます
+                </span>
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="parent"
+                  value={parent}
+                  onChange={(e) => setParent(e.target.value)}
+                  placeholder="読み込み中..."
+                  disabled={busy || picking}
+                  className="font-mono"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={pickFolder}
+                  disabled={busy || picking}
+                  className="shrink-0 gap-1.5"
+                >
+                  {picking
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <FolderOpen className="h-3.5 w-3.5" />}
+                  参照...
+                </Button>
+              </div>
+              {parent && effectiveId && (
+                <p className="text-xs text-muted-foreground">
+                  → <code className="rounded bg-muted px-1 font-mono">{parent}{parent.endsWith('\\') || parent.endsWith('/') ? '' : '\\'}cart-{effectiveId}</code>
+                </p>
+              )}
             </div>
 
           </CardContent>

@@ -1,6 +1,20 @@
 import { NextResponse } from 'next/server'
 import { spawnSync } from 'child_process'
+import { networkInterfaces } from 'os'
+import { resolve } from 'path'
+import QRCode from 'qrcode'
 import { resolveCartridgesPath } from '@/lib/config'
+
+function getLocalIp(): string | null {
+  const nets = networkInterfaces()
+  for (const addrs of Object.values(nets)) {
+    if (!addrs) continue
+    for (const a of addrs) {
+      if (a.family === 'IPv4' && !a.internal) return a.address
+    }
+  }
+  return null
+}
 
 /**
  * Studio のサイドバー用に、環境情報をまとめて返すエンドポイント。
@@ -28,10 +42,29 @@ export async function GET() {
     }
   } catch { /* ignore */ }
 
+  const localIp = getLocalIp()
+  const port = process.env.PORT ?? '3200'
+  const localUrl = localIp ? `http://${localIp}:${port}` : null
+
+  let qrDataUrl: string | null = null
+  if (localUrl) {
+    try {
+      qrDataUrl = await QRCode.toDataURL(localUrl, { width: 160, margin: 2 })
+    } catch { /* ignore */ }
+  }
+
+  // 新規カートリッジ作成時のデフォルト親フォルダ (Studio の親)
+  // 例: C:/.../Projects/AppHarborStudio → C:/.../Projects
+  const defaultCartridgeParent = resolve(process.cwd(), '..')
+
   return NextResponse.json({
     cartridgesPath,
+    defaultCartridgeParent,
     productionUrl,
     branch,
     inSync,
+    nodeEnv: process.env.NODE_ENV ?? 'unknown',
+    localUrl,
+    qrDataUrl,
   })
 }

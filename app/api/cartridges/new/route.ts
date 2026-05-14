@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync, readFileSync, statSync } from 'fs'
 import { spawnSync } from 'child_process'
-import { join } from 'path'
+import { join, resolve, isAbsolute } from 'path'
 import { resolveCartridgesPath } from '@/lib/config'
 
 function renderCartridgeClaudeMd(ctx: { id: string; name: string; tablePrefix: string; permissionsList: string }): string | null {
@@ -167,8 +167,41 @@ ctx.role                  // アプリ内ロール ('viewer' / 'admin' 等)
 
 const NAME_PATTERN = /^[a-z][a-z0-9-]{1,40}$/
 
+/**
+ * Studio の親ディレクトリ (cart-* リポを兄弟として並べる位置の既定値)。
+ * 例: AppHarborStudio が C:/.../Projects/AppHarborStudio なら C:/.../Projects/
+ */
+function defaultCartridgeParent(): string {
+  return resolve(process.cwd(), '..')
+}
+
+/**
+ * Windows の junction を作成する (mklink /J)。
+ * cmd を経由しないと mklink は呼べないので spawnSync('cmd', ...) を使う。
+ * link 先が既存なら何もしない (idempotent)。
+ */
+function createJunction(link: string, target: string): { ok: boolean; error?: string } {
+  if (existsSync(link)) return { ok: true } // already exists
+  if (process.platform !== 'win32') {
+    // Linux/macOS は symbolic link でフォールバック
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { symlinkSync } = require('fs') as typeof import('fs')
+      symlinkSync(target, link, 'dir')
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  }
+  const r = spawnSync('cmd', ['/c', 'mklink', '/J', link, target], { encoding: 'utf-8' })
+  if (r.status !== 0) {
+    return { ok: false, error: (r.stderr || r.stdout || '').trim() || `exit ${r.status}` }
+  }
+  return { ok: true }
+}
+
 export async function POST(req: Request) {
-  let body: { id?: string; name?: string; description?: string }
+  let body: { id?: string; name?: string; description?: string; parentPath?: string }
   try {
     body = await req.json()
   } catch {
@@ -180,10 +213,31 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'id は小文字英数とハイフン (2〜40文字、先頭は英字)' }, { status: 400 })
   }
 
-  const root = resolveCartridgesPath()
-  const dir  = join(root, id)
+  // 作成先の決定:
+  //   parentPath が指定されたら: <parentPath>/cart-<id>/ (sibling パターン、junction で参照)
+  //   未指定の場合:                 <default parent>/cart-<id>/ (Studio の親)
+  const rawParent = (body.parentPath ?? '').trim()
+  const parent    = rawParent && isAbsolute(rawParent)
+    ? resolve(rawParent)
+    : defaultCartridgeParent()
+
+  if (!existsSync(parent) || !statSync(parent).isDirectory()) {
+    return NextResponse.json({ error: `作成先フォルダが存在しません: ${parent}` }, { status: 400 })
+  }
+
+  const folderName = `cart-${id}`
+  const dir        = join(parent, folderName)
   if (existsSync(dir)) {
-    return NextResponse.json({ error: 'すでに存在します' }, { status: 409 })
+    return NextResponse.json({ error: `すでに存在します: ${dir}` }, { status: 409 })
+  }
+
+  // junction の配置先 (Studio がカートリッジを scan する _local/<id>)
+  const cartridgesRoot = resolveCartridgesPath()
+  const junctionPath   = join(cartridgesRoot, '_local', id)
+  if (existsSync(junctionPath)) {
+    return NextResponse.json({
+      error: `junction の名前衝突: ${junctionPath} が既に存在します。`
+    }, { status: 409 })
   }
 
   try {
@@ -268,6 +322,52 @@ export default async function HomePage({
       writeAppHarborContext(dir, sdkPkg?.version ?? 'unknown')
     } catch { /* SDK 未インストール時等は .appharbor/ をスキップ */ }
 
+    // git init + 初期コミット (sibling リポとして独立)
+    const gitInitErrors: string[] = []
+    try {
+      // .gitignore (node_modules / .next 等を除外)
+      writeFileSync(join(dir, '.gitignore'),
+`# Node modules / build artifacts
+node_modules/
+.next/
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 環境ファイル
+.env
+.env.local
+`, 'utf-8')
+
+      const gitOpts = { cwd: dir, encoding: 'utf-8' as const }
+      const initR = spawnSync('git', ['init', '-b', 'main'], gitOpts)
+      if (initR.status !== 0) gitInitErrors.push(`init: ${initR.stderr.trim()}`)
+
+      const addR = spawnSync('git', ['add', '.'], gitOpts)
+      if (addR.status !== 0) gitInitErrors.push(`add: ${addR.stderr.trim()}`)
+
+      const commitR = spawnSync('git', [
+        '-c', 'user.email=studio@appharbor.local',
+        '-c', 'user.name=AppHarbor Studio',
+        'commit', '-m', `feat: initial scaffold for ${id}`,
+      ], gitOpts)
+      if (commitR.status !== 0) gitInitErrors.push(`commit: ${commitR.stderr.trim()}`)
+    } catch (e) {
+      gitInitErrors.push(`unexpected: ${(e as Error).message}`)
+    }
+
+    // junction `cartridges/_local/<id>` → 実体フォルダ
+    mkdirSync(join(cartridgesRoot, '_local'), { recursive: true })
+    const junctionResult = createJunction(junctionPath, dir)
+
     // Studio 内のルーティングに即反映するため mount を実行
     try {
       spawnSync(process.execPath, [join(process.cwd(), 'scripts', 'mount-cartridges.js')], {
@@ -276,7 +376,14 @@ export default async function HomePage({
       })
     } catch { /* マウント失敗してもカートリッジ自体は作成済み */ }
 
-    return NextResponse.json({ ok: true, id, path: dir })
+    return NextResponse.json({
+      ok:           true,
+      id,
+      path:         dir,
+      junctionPath: junctionResult.ok ? junctionPath : null,
+      junctionError: junctionResult.ok ? null : junctionResult.error,
+      gitInitErrors: gitInitErrors.length > 0 ? gitInitErrors : undefined,
+    })
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 })
   }
