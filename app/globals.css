@@ -2,7 +2,12 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@source "../../cartridges/";
+/* mount された各カートリッジを Tailwind のスキャン対象に含める。
+   app/org/[slug]/apps/ 配下は Next.js 動的セグメントの [slug] ブラケットが
+   glob のキャラクタークラスとして解釈されるため自動検出から漏れる。
+   兄弟リポジトリ (cart-*) を直接スキャン対象に追加する。 */
+@source "../../cart-*/routes/**/*.{ts,tsx,js,jsx}";
+@source "../cartridges/**/*.{ts,tsx,js,jsx}";
 
 @custom-variant dark (&:is(.dark *));
 
