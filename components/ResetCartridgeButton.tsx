@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertTriangle, RotateCcw } from 'lucide-react'
+import { AlertTriangle, RotateCcw, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 type Props = { appId: string }
@@ -64,7 +64,9 @@ export function ResetCartridgeButton({ appId }: Props) {
           disabled={busy}
           className="gap-1.5"
         >
-          <RotateCcw className="h-3.5 w-3.5" />
+          {busy
+            ? <Loader2  className="h-3.5 w-3.5 animate-spin" />
+            : <RotateCcw className="h-3.5 w-3.5" />}
           {busy ? 'リセット中...' : '初期化する'}
         </Button>
         {error && (

@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Check, Circle } from 'lucide-react'
+import { Check, Circle, Loader2 } from 'lucide-react'
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card'
@@ -166,10 +166,19 @@ export function Step1CreateForm() {
           >
             キャンセル
           </Link>
-          <Button onClick={submit} disabled={busy || !idValid}>
+          <Button onClick={submit} disabled={busy || !idValid} className="gap-1.5">
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
             {busy ? '確定中...' : 'アプリ情報を確定'}
           </Button>
         </div>
+
+        {busy && (
+          <p className="text-xs text-center text-muted-foreground">
+            雛形フォルダと <code className="rounded bg-muted px-1">.appharbor/</code> (SDK + 規約) を生成中...
+            <br />
+            初回は webpack コンパイルのため 30〜90 秒かかることがあります。
+          </p>
+        )}
       </div>
     </>
   )

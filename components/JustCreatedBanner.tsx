@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { PartyPopper, X, Trash2 } from 'lucide-react'
+import { PartyPopper, X, Trash2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 type Props = {
@@ -88,10 +88,17 @@ export function JustCreatedBanner({ appId, displayName }: Props) {
               className="gap-1.5"
               title="アプリ名/識別子をミスった時用 — 削除して新規作成画面に戻る"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              {busy
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <Trash2  className="h-3.5 w-3.5" />}
               {busy ? '削除中...' : 'やり直す (削除して新規作成)'}
             </Button>
           </div>
+          {busy && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              フォルダを削除しています...
+            </p>
+          )}
         </div>
       </div>
     </div>

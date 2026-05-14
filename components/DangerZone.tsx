@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, Trash2 } from 'lucide-react'
+import { AlertTriangle, Trash2, Loader2 } from 'lucide-react'
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card'
@@ -34,8 +34,17 @@ export function DangerZone({ appId, displayName }: Props) {
     )) return
 
     setBusy(true)
+
+    // 2 分のタイムアウト: dev server の hot-reload で応答が失われても復帰できるように
+    const ctrl    = new AbortController()
+    const timeout = setTimeout(() => ctrl.abort(), 120_000)
+
     try {
-      const res = await fetch(`/api/cartridges/${encodeURIComponent(appId)}/delete`, { method: 'POST' })
+      const res = await fetch(`/api/cartridges/${encodeURIComponent(appId)}/delete`, {
+        method: 'POST',
+        signal: ctrl.signal,
+      })
+      clearTimeout(timeout)
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
         alert(`削除に失敗しました: ${j.error ?? `HTTP ${res.status}`}`)
@@ -44,8 +53,23 @@ export function DangerZone({ appId, displayName }: Props) {
       }
       router.push('/')
     } catch (e) {
-      alert(`削除に失敗しました: ${(e as Error).message}`)
-      setBusy(false)
+      clearTimeout(timeout)
+      const err = e as Error
+      if (err.name === 'AbortError') {
+        // タイムアウト時: 実は削除が完了している可能性が高い (dev 環境特有の応答ロス)
+        if (confirm(
+          'サーバー応答が 2 分以上ありません。\n' +
+          '削除は完了している可能性があります。\n\n' +
+          'カートリッジ一覧に戻って確認しますか?',
+        )) {
+          router.push('/')
+        } else {
+          setBusy(false)
+        }
+      } else {
+        alert(`削除に失敗しました: ${err.message}`)
+        setBusy(false)
+      }
     }
   }
 
@@ -69,9 +93,16 @@ export function DangerZone({ appId, displayName }: Props) {
           disabled={busy}
           className="gap-1.5"
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          {busy
+            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            : <Trash2  className="h-3.5 w-3.5" />}
           {busy ? '削除中...' : 'このカートリッジを削除'}
         </Button>
+        {busy && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            フォルダ・マウント・PGlite テーブルを削除中です。30〜90 秒かかることがあります。
+          </p>
+        )}
       </CardContent>
     </Card>
   )
