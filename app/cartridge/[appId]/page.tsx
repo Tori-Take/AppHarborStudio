@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
-import { ArrowLeft, BookOpen, Database, FolderOpen, AlertTriangle, FileCheck2, Play } from 'lucide-react'
+import { ArrowLeft, Database, FolderOpen, AlertTriangle, FileCheck2, Play } from 'lucide-react'
 import { getCartridge } from '@/lib/cartridge-scanner'
 import { LintPanel } from '@/components/LintPanel'
 import { ExportButton } from '@/components/ExportButton'
@@ -14,11 +14,11 @@ import { ResetCartridgeButton } from '@/components/ResetCartridgeButton'
 import { PublishedBadge } from '@/components/PublishedBadge'
 import { ReleasePipeline } from '@/components/ReleasePipeline'
 import { CartridgeWorkbench } from '@/components/CartridgeWorkbench'
+import { JustCreatedBanner } from '@/components/JustCreatedBanner'
 import { CopyButton } from '@/components/ui/copy-button'
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card'
-import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 /** db/schema.sql から create table 文を抽出（コメント除外） */
@@ -217,22 +217,15 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
   return (
     <div className="p-8 max-w-3xl mx-auto">
 
-      <div className="mb-6 flex items-center justify-between">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          カートリッジ一覧に戻る
-        </Link>
-        <Link
-          href={`/cartridge/${encodeURIComponent(c.id)}/getting-started`}
-          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
-        >
-          <BookOpen className="h-3.5 w-3.5" />
-          始め方ガイド
-        </Link>
-      </div>
+      <Link
+        href="/"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        カートリッジ一覧に戻る
+      </Link>
+
+      <JustCreatedBanner appId={c.id} displayName={c.manifest?.displayName ?? c.id} />
 
       <header className="mb-6">
         <h1 className="text-2xl font-bold flex items-baseline gap-3">
