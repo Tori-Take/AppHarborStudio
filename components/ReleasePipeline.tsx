@@ -165,6 +165,15 @@ export function ReleasePipeline({ appId }: { appId: string }) {
     },
   ]
 
+  // 「次に注目すべき Phase」を判定 (Action Center と同じロジック)
+  let currentPhase: Stage['key'] | null = null
+  if (hasDirty || hasUnpush) {
+    currentPhase = 'phase1'              // 未コミット/未 push → ローカル作業
+  } else if (phase3Status === 'na' || phase3Status === 'warn') {
+    currentPhase = 'phase3'              // 本番未インストール or 古い → リリース
+  }
+  // すべて同期済み (ok) なら currentPhase = null (現在地表示なし)
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -185,12 +194,25 @@ export function ReleasePipeline({ appId }: { appId: string }) {
       </CardHeader>
       <CardContent className="space-y-3">
 
-        <div className="grid grid-cols-3 gap-2">
-          {stages.map((s, i) => (
+        <div className="grid grid-cols-3 gap-2 pt-4">
+          {stages.map((s, i) => {
+            const isCurrent = currentPhase === s.key
+            return (
             <div
               key={s.key}
-              className={cn('relative rounded-lg border p-3', STAGE_COLORS[s.status])}
+              className={cn(
+                'relative rounded-lg border p-3 transition-all',
+                STAGE_COLORS[s.status],
+                isCurrent && 'ring-2 ring-primary ring-offset-2 ring-offset-background shadow-md',
+                !isCurrent && currentPhase !== null && 'opacity-60',
+              )}
             >
+              {isCurrent && (
+                <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-primary-foreground shadow-sm whitespace-nowrap">
+                  👈 ここ (次のアクション)
+                </div>
+              )}
+
               {i < stages.length - 1 && (
                 <ChevronRight className="absolute -right-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               )}
@@ -223,7 +245,8 @@ export function ReleasePipeline({ appId }: { appId: string }) {
                 </a>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
 
         <ActionCenter
