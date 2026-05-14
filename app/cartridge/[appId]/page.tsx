@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
-import { ArrowLeft, Database, FolderOpen, AlertTriangle, FileCheck2, Play } from 'lucide-react'
+import { ArrowLeft, Database, FolderOpen, AlertTriangle, FileCheck2, Play, Settings2 } from 'lucide-react'
 import { getCartridge } from '@/lib/cartridge-scanner'
 import { LintPanel } from '@/components/LintPanel'
 import { ExportButton } from '@/components/ExportButton'
@@ -15,13 +15,11 @@ import { PublishedBadge } from '@/components/PublishedBadge'
 import { ReleasePipeline } from '@/components/ReleasePipeline'
 import { CartridgeWorkbench } from '@/components/CartridgeWorkbench'
 import { JustCreatedBanner } from '@/components/JustCreatedBanner'
-import { DangerZone } from '@/components/DangerZone'
 import { CopyButton } from '@/components/ui/copy-button'
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 /** db/schema.sql から create table 文を抽出（コメント除外） */
@@ -53,50 +51,42 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
   )
 
   // ───────── 開発モード (Phase 1) のコンテンツ ─────────
-  const manifestName        = (c.manifest?.name as string) ?? c.manifest?.displayName ?? c.id
-  const manifestDescription = c.manifest?.description != null ? String(c.manifest.description) : ''
-  const manifestVersion     = c.manifest?.version != null ? String(c.manifest.version) : ''
+  const manifestName = (c.manifest?.name as string) ?? c.manifest?.displayName ?? c.id
 
   const developSection = (
     <div className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">アプリ情報</CardTitle>
-          <CardDescription>
-            作成時の入力内容です。<strong>識別子は変更できません</strong>。
-            アプリ名や説明を変えたい時は <code className="rounded bg-muted px-1 text-xs">cartridges/{c.id}/manifest.json</code> を直接編集してください。
-          </CardDescription>
         </CardHeader>
         <CardContent>
           {c.manifest ? (
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="info-name">アプリ名</Label>
-                <Input id="info-name" value={manifestName} disabled />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="info-id">識別子</Label>
-                <div className="flex items-center gap-2">
-                  <span className="shrink-0 text-sm text-muted-foreground">/org/&lt;org&gt;/apps/</span>
-                  <Input id="info-id" value={c.id} disabled className="font-mono" />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="info-desc">説明</Label>
-                <Input id="info-desc" value={manifestDescription} disabled placeholder="(未設定)" />
-              </div>
-              {manifestVersion && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="info-version">バージョン</Label>
-                  <Input id="info-version" value={`v${manifestVersion}`} disabled className="font-mono w-32" />
-                </div>
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
+              <dt className="text-muted-foreground">アプリ名</dt>
+              <dd>{manifestName}</dd>
+              <dt className="text-muted-foreground">識別子</dt>
+              <dd><code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{c.id}</code></dd>
+              {c.manifest.description != null && String(c.manifest.description) && (
+                <>
+                  <dt className="text-muted-foreground">説明</dt>
+                  <dd>{String(c.manifest.description)}</dd>
+                </>
               )}
-            </div>
+              {c.manifest.version != null && (
+                <>
+                  <dt className="text-muted-foreground">バージョン</dt>
+                  <dd><code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">v{String(c.manifest.version)}</code></dd>
+                </>
+              )}
+            </dl>
           ) : (
             <p className="text-sm text-destructive">
               manifest.json が見つかりません。
             </p>
           )}
+          <p className="mt-3 text-xs text-muted-foreground">
+            ※ 詳細表示・削除は右上の「アプリ情報・削除」から。
+          </p>
         </CardContent>
       </Card>
 
@@ -155,8 +145,6 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
           <ResetCartridgeButton appId={c.id} />
         </CardContent>
       </Card>
-
-      <DangerZone appId={c.id} displayName={manifestName} />
     </div>
   )
 
@@ -234,13 +222,22 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
   return (
     <div className="p-8 max-w-3xl mx-auto">
 
-      <Link
-        href="/"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        カートリッジ一覧に戻る
-      </Link>
+      <div className="mb-6 flex items-center justify-between">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          カートリッジ一覧に戻る
+        </Link>
+        <Link
+          href={`/cartridge/${encodeURIComponent(c.id)}/info`}
+          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
+        >
+          <Settings2 className="h-3.5 w-3.5" />
+          アプリ情報・削除
+        </Link>
+      </div>
 
       <JustCreatedBanner appId={c.id} displayName={c.manifest?.displayName ?? c.id} />
 
