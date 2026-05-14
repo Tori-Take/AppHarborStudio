@@ -9,6 +9,23 @@
 
 ---
 
+## 📚 着手前に必読 (AppHarbor の前提知識)
+
+実装に入る前に、以下のファイルを必ず読んでください。
+Studio がカートリッジ作成時に SDK スナップショットと規約を配置しています:
+
+| ファイル | 内容 |
+|---|---|
+| `.appharbor/PLATFORM.md` | AppHarbor の概要 + SDK の使い方 (README) |
+| `.appharbor/SDK-TYPES.ts` | 使える型 (`Actor`, `AppContext`, `CartridgeManifest` 等) |
+| `.appharbor/SDK-API.ts` | 使える関数 (`requireApp`, `getAdminSupabase` 等) |
+| `.appharbor/RULES.md` | マルチテナント設計の鉄則 (`organization_id` / RLS) |
+
+これらは **参照専用** (build には node_modules の @appharbor/sdk が使われる)。
+SDK バージョン更新で内容が古くなった場合は Studio で再生成できます。
+
+---
+
 ## 🎭 ⚠ 着手前に必ず確認: ユーザーロール設計
 
 **実装作業に入る前に、開発者に必ず以下を質問してください:**
