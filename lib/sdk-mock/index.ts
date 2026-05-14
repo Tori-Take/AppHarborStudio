@@ -4,6 +4,11 @@
  * AppHarbor 本体 (@/sdk) と同じ shape の関数を、Studio 内のメモリ状態から返す。
  * カートリッジコードは一切変えずにそのまま動作する想定。
  *
+ * 注意: lib/sdk-mock の中では `@appharbor/sdk` から import しない。
+ * Studio の webpack alias が `@appharbor/sdk → ./lib/sdk-mock` となっているため、
+ * このファイル内で `@appharbor/sdk` を import すると循環参照になる。
+ * 代わりに、型は ./types でローカル定義し、SDK 契約と shape を合わせる責務を負う。
+ *
  * 注意: Phase 1 ではメモリ状態のみ。DB（Supabase）モックは Phase 2 で対応。
  */
 

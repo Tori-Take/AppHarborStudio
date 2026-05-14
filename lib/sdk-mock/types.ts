@@ -1,12 +1,15 @@
 /**
  * モック SDK の型定義
  *
- * AppHarbor 本体 (lib/sdk/) と同じ shape を維持すること。
- * 本体の型変更時は scripts/sync-types.js で同期するか、本ファイルを直接更新する。
+ * 契約 (型) の単一ソースは @appharbor/sdk (npm パッケージ)。
+ * 本ファイルの OrgActor / AppContext / OrgRole は SDK 契約と shape を合わせる。
  *
- * 同期対象（本体側パス）:
- *   - lib/auth/requireOrgAccess.ts → OrgActor
- *   - lib/sdk/requireApp.ts        → AppContext
+ * 本ファイルから直接 @appharbor/sdk を import できない理由:
+ *   Studio の webpack alias `@appharbor/sdk → ./lib/sdk-mock` が循環するため、
+ *   このファイル内では @appharbor/sdk を import しない。
+ *   SDK 側の型変更は本ファイルにも手動で反映する。
+ *
+ * 参照: node_modules/@appharbor/sdk/src/types.ts
  */
 
 export type OrgRole = 'org-admin' | 'dept-admin' | 'member'
