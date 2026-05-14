@@ -6,6 +6,7 @@ import { getCartridge } from '@/lib/cartridge-scanner'
 import { LintPanel } from '@/components/LintPanel'
 import { ExportButton } from '@/components/ExportButton'
 import { AiDevPanel } from '@/components/AiDevPanel'
+import { AiContextPanel } from '@/components/AiContextPanel'
 import { PlayButton } from '@/components/PlayButton'
 import { DeployInfoPanel } from '@/components/DeployInfoPanel'
 import { ResetCartridgeButton } from '@/components/ResetCartridgeButton'
@@ -79,6 +80,8 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
         </p>
       </section>
 
+      <AiContextPanel appId={c.id} />
+
       <AiDevPanel appId={c.id} path={c.path} />
 
       <section style={{
@@ -90,10 +93,11 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
           開発の進め方
         </div>
         <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.9, color: '#cbd5e1' }}>
-          <li>上の「<strong>エクスプローラーで開く</strong>」でフォルダを開く</li>
-          <li>そのフォルダを <strong>Claude Code</strong> で開いて開発を依頼する<br/>
+          <li>上の「<strong>🤖 AI 開発コンテキスト</strong>」を <strong>📋 コピー</strong></li>
+          <li>「<strong>エクスプローラーで開く</strong>」でフォルダを開く</li>
+          <li>そのフォルダを <strong>Claude Code</strong> で開き、コピーしたコンテキスト + やりたいことを貼り付けて依頼する<br/>
             <span style={{ fontSize: 11, color: '#64748b' }}>
-              （フォルダ内の <code>CLAUDE.md</code> を AI が読み、まずロールと DB 要否を確認します）
+              （AI が SDK 契約とこのカートリッジの規約を理解した状態で開発を始められます）
             </span>
           </li>
           <li>下の「▶ ローカルプレイ」で動作確認</li>
