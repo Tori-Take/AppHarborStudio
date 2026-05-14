@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useFullscreenMode } from '@/lib/use-fullscreen-mode'
+import { PhaseIndicator } from '@/components/PhaseIndicator'
 
 type RestartPhase = 'idle' | 'signal' | 'waiting' | 'failed'
 
@@ -163,6 +164,8 @@ export function PreviewNav() {
       <span style={{ color: '#64748b', fontSize: 12 }}>
         プレビュー中: <code style={{ color: '#fbbf24' }}>{appId}</code>
       </span>
+
+      <PhaseIndicator />
 
       {/* デプロイ状況のミニバッジ */}
       {info && (

@@ -7,6 +7,7 @@ import Image from 'next/image'
 import { Home, Settings, BookOpen, ExternalLink, GitBranch, FolderOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { RoleSwitcher } from '@/components/RoleSwitcher'
+import { PhaseIndicator } from '@/components/PhaseIndicator'
 
 type EnvInfo = {
   cartridgesPath: string
@@ -60,6 +61,9 @@ export function Sidebar() {
         <p className="mt-0.5 text-[11px] tracking-[0.3em] text-muted-foreground uppercase">
           Studio
         </p>
+        <div className="mt-2">
+          <PhaseIndicator />
+        </div>
       </div>
 
       {/* ナビ（メイン） */}

@@ -11,6 +11,8 @@ import { CartridgeStepper } from '@/components/CartridgeStepper'
 import { DeployInfoPanel } from '@/components/DeployInfoPanel'
 import { ResetCartridgeButton } from '@/components/ResetCartridgeButton'
 import { PublishedBadge } from '@/components/PublishedBadge'
+import { ReleasePipeline } from '@/components/ReleasePipeline'
+import { ModeTabs } from '@/components/ModeTabs'
 
 /** db/schema.sql から create table 文を抽出（コメント除外） */
 function extractTablesFromSchema(cartridgePath: string): string[] {
@@ -53,6 +55,10 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
           <p style={{ color: '#94a3b8', fontSize: 14, marginTop: 6 }}>{c.manifest.description}</p>
         )}
       </header>
+
+      <ModeTabs appId={c.id} />
+
+      <ReleasePipeline appId={c.id} />
 
       <section style={panelStyle}>
         <div style={labelStyle}>パス</div>
