@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, ArrowRight, FolderOpen, Bot, Play, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, FolderOpen, Bot, Play, CheckCircle2, LayoutDashboard } from 'lucide-react'
 import { getCartridge } from '@/lib/cartridge-scanner'
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
@@ -31,13 +31,22 @@ export default async function GettingStartedPage({ params }: { params: Promise<{
   return (
     <div className="p-8 max-w-3xl mx-auto">
 
-      <Link
-        href="/"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        カートリッジ一覧に戻る
-      </Link>
+      <div className="mb-6 flex items-center justify-between">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          カートリッジ一覧に戻る
+        </Link>
+        <Link
+          href={detailHref}
+          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
+        >
+          <LayoutDashboard className="h-3.5 w-3.5" />
+          詳細ページ
+        </Link>
+      </div>
 
       {/* 完了メッセージ */}
       <div className="mb-6 flex items-start gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4">
