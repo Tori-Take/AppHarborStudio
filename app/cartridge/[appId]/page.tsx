@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
-import { ArrowLeft, Database, FolderOpen, AlertTriangle, FileCheck2, Play, Settings2 } from 'lucide-react'
+import { ArrowLeft, Database, FolderOpen, AlertTriangle, FileCheck2, Play, Settings2, Wrench, Clapperboard, Rocket } from 'lucide-react'
 import { getCartridge } from '@/lib/cartridge-scanner'
 import { LintPanel } from '@/components/LintPanel'
 import { ExportButton } from '@/components/ExportButton'
@@ -13,7 +13,6 @@ import { DeployInfoPanel } from '@/components/DeployInfoPanel'
 import { ResetCartridgeButton } from '@/components/ResetCartridgeButton'
 import { PublishedBadge } from '@/components/PublishedBadge'
 import { ReleasePipeline } from '@/components/ReleasePipeline'
-import { CartridgeWorkbench } from '@/components/CartridgeWorkbench'
 import { JustCreatedBanner } from '@/components/JustCreatedBanner'
 import { CopyButton } from '@/components/ui/copy-button'
 import {
@@ -50,175 +49,6 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
     schemaTables.some((t) => !manifestTables.includes(t))
   )
 
-  // ───────── 開発モード (Phase 1) のコンテンツ ─────────
-  const manifestName = (c.manifest?.name as string) ?? c.manifest?.displayName ?? c.id
-
-  const developSection = (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">アプリ情報</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {c.manifest ? (
-            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
-              <dt className="text-muted-foreground">アプリ名</dt>
-              <dd>{manifestName}</dd>
-              <dt className="text-muted-foreground">識別子</dt>
-              <dd><code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{c.id}</code></dd>
-              {c.manifest.description != null && String(c.manifest.description) && (
-                <>
-                  <dt className="text-muted-foreground">説明</dt>
-                  <dd>{String(c.manifest.description)}</dd>
-                </>
-              )}
-              {c.manifest.version != null && (
-                <>
-                  <dt className="text-muted-foreground">バージョン</dt>
-                  <dd><code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">v{String(c.manifest.version)}</code></dd>
-                </>
-              )}
-            </dl>
-          ) : (
-            <p className="text-sm text-destructive">
-              manifest.json が見つかりません。
-            </p>
-          )}
-          <p className="mt-3 text-xs text-muted-foreground">
-            ※ 詳細表示・削除は右上の「アプリ情報・削除」から。
-          </p>
-        </CardContent>
-      </Card>
-
-      <AiContextPanel appId={c.id} />
-
-      <AiDevPanel appId={c.id} path={c.path} />
-
-      <Card className="border-dashed bg-muted/30">
-        <CardHeader>
-          <CardTitle className="text-base">開発の進め方</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ol className="ml-5 list-decimal space-y-2 text-sm">
-            <li>上の「<strong>AI 開発コンテキスト</strong>」を <strong>コピー</strong></li>
-            <li>「<strong>エクスプローラーで開く</strong>」でフォルダを開く</li>
-            <li>そのフォルダを <strong>Claude Code</strong> で開き、コピーしたコンテキスト + やりたいことを貼り付けて依頼<br/>
-              <span className="text-xs text-muted-foreground">
-                （AI が SDK 契約とこのカートリッジの規約を理解した状態で開発を始められます）
-              </span>
-            </li>
-            <li>下の「ローカルプレイ」で動作確認</li>
-          </ol>
-        </CardContent>
-      </Card>
-
-      <Card className={cn(
-        c.manifest?.studioCompatible === false ? 'border-destructive/40' : 'border-blue-500/40',
-      )}>
-        <CardHeader>
-          <CardTitle className={cn(
-            'flex items-center gap-2 text-base',
-            c.manifest?.studioCompatible === false ? 'text-destructive' : 'text-blue-600 dark:text-blue-400',
-          )}>
-            <Play className="h-4 w-4" />
-            ローカルプレイ (Phase 1)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {c.manifest?.studioCompatible === false ? (
-            <div>
-              <div className="font-semibold text-destructive">Studio 非対応カートリッジ</div>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {c.manifest.studioCompatibleNote ?? 'このカートリッジは規約違反の依存があるため Studio で起動できません。'}
-              </p>
-            </div>
-          ) : c.hasRoutes ? (
-            <PlayButton appId={c.id} />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              routes/ がないため起動できません
-            </p>
-          )}
-          <p className="mt-3 text-xs text-muted-foreground">
-            DB は PGlite ファイル永続化。リセットは <code className="rounded bg-muted px-1 text-xs">studio/.studio-db/</code> を削除。
-          </p>
-          <ResetCartridgeButton appId={c.id} />
-        </CardContent>
-      </Card>
-    </div>
-  )
-
-  // ───────── プレビューモード (Phase 2) のコンテンツ ─────────
-  const previewSection = (
-    <div className="space-y-4">
-      <Card className="border-amber-500/40 bg-amber-500/5">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base text-amber-700 dark:text-amber-400">
-            🎬 Phase 2 · Studio Deploy で共有
-          </CardTitle>
-          <CardDescription>
-            このモードでは <strong>git push</strong> 後の Studio Deploy (Vercel) を確認します。
-            クライアントレビューやチーム内デモに使う共有 URL の状態をチェックしてください。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ul className="ml-5 list-disc space-y-1 text-xs text-muted-foreground">
-            <li>DB は Supabase <code className="rounded bg-muted px-1">studio</code> スキーマ (Studio 利用者全員で共有)</li>
-            <li>認証は Cookie のモックユーザー (共有プロファイル)</li>
-            <li>変更を反映するには <strong>git push → Vercel デプロイ</strong> を待つ</li>
-          </ul>
-        </CardContent>
-      </Card>
-
-      <PublishedBadge appId={c.id} />
-      <DeployInfoPanel appId={c.id} />
-    </div>
-  )
-
-  // ───────── リリースモード (Phase 3) のコンテンツ ─────────
-  const releaseSection = (
-    <div className="space-y-4">
-      <Card className="border-emerald-500/40 bg-emerald-500/5">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base text-emerald-700 dark:text-emerald-400">
-            🚀 Phase 3 · AppHarbor 本番に昇格
-          </CardTitle>
-          <CardDescription>
-            このモードでは <strong>AppHarbor 本番</strong> へのリリース準備状況を確認します。
-            以下のチェックを通過したら <code className="rounded bg-muted px-1">cartridges-registry.yaml</code> に version を追記して PR を出してください。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ol className="ml-5 list-decimal space-y-1 text-xs text-muted-foreground">
-            <li>規約チェック (Lint) を通す</li>
-            <li>カートリッジをエクスポートする</li>
-            <li>AppHarbor 本体リポジトリの <code className="rounded bg-muted px-1">cartridges-registry.yaml</code> を更新</li>
-            <li>本体側で <code className="rounded bg-muted px-1">cartridge:fetch</code> → migration 生成 → push</li>
-          </ol>
-        </CardContent>
-      </Card>
-
-      <LintPanel appId={c.id} />
-
-      <ExportButton appId={c.id} />
-
-      {c.manifest && (
-        <Card>
-          <CardContent className="py-4">
-            <details className="text-sm">
-              <summary className="cursor-pointer select-none text-muted-foreground">
-                manifest.json を表示
-              </summary>
-              <pre className="mt-3 overflow-auto rounded-md border bg-muted/30 p-3 font-mono text-xs">
-                {JSON.stringify(c.manifest, null, 2)}
-              </pre>
-            </details>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  )
-
   return (
     <div className="p-8 max-w-3xl mx-auto">
 
@@ -242,7 +72,7 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
       <JustCreatedBanner appId={c.id} displayName={c.manifest?.displayName ?? c.id} />
 
       <header className="mb-6">
-        <h1 className="text-2xl font-bold flex items-baseline gap-3">
+        <h1 className="flex items-baseline gap-3 text-2xl font-bold">
           {c.manifest?.displayName ?? c.id}
           <span className="text-sm font-normal text-muted-foreground">{c.id}</span>
         </h1>
@@ -333,13 +163,134 @@ export default async function CartridgePage({ params }: { params: Promise<{ appI
         </Card>
       )}
 
-      <CartridgeWorkbench
-        appId={c.id}
-        developSection={developSection}
-        previewSection={previewSection}
-        releaseSection={releaseSection}
-      />
+      {/* ═══════════ Phase 1 · ローカル開発 ═══════════ */}
+      <PhaseSection
+        Icon={Wrench}
+        title="Phase 1 · ローカル開発"
+        description="Claude Code でフォルダを開いて開発し、ローカル PGlite で動作確認します。"
+        accentClass="text-blue-700 dark:text-blue-400"
+      >
+        <AiContextPanel appId={c.id} />
+        <AiDevPanel appId={c.id} path={c.path} />
+
+        <Card className="border-dashed bg-muted/30">
+          <CardHeader>
+            <CardTitle className="text-base">開発の進め方</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ol className="ml-5 list-decimal space-y-2 text-sm">
+              <li>上の「<strong>AI 開発コンテキスト</strong>」を <strong>コピー</strong></li>
+              <li>「<strong>エクスプローラーで開く</strong>」でフォルダを開く</li>
+              <li>そのフォルダを <strong>Claude Code</strong> で開き、コピーしたコンテキスト + やりたいことを貼り付けて依頼<br/>
+                <span className="text-xs text-muted-foreground">
+                  （AI が SDK 契約とこのカートリッジの規約を理解した状態で開発を始められます）
+                </span>
+              </li>
+              <li>下の「ローカルプレイ」で動作確認</li>
+            </ol>
+          </CardContent>
+        </Card>
+
+        <Card className={cn(
+          c.manifest?.studioCompatible === false ? 'border-destructive/40' : 'border-blue-500/40',
+        )}>
+          <CardHeader>
+            <CardTitle className={cn(
+              'flex items-center gap-2 text-base',
+              c.manifest?.studioCompatible === false ? 'text-destructive' : 'text-blue-600 dark:text-blue-400',
+            )}>
+              <Play className="h-4 w-4" />
+              ローカルプレイ
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {c.manifest?.studioCompatible === false ? (
+              <div>
+                <div className="font-semibold text-destructive">Studio 非対応カートリッジ</div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {c.manifest.studioCompatibleNote ?? 'このカートリッジは規約違反の依存があるため Studio で起動できません。'}
+                </p>
+              </div>
+            ) : c.hasRoutes ? (
+              <PlayButton appId={c.id} />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                routes/ がないため起動できません
+              </p>
+            )}
+            <p className="mt-3 text-xs text-muted-foreground">
+              DB は PGlite ファイル永続化。リセットは <code className="rounded bg-muted px-1 text-xs">studio/.studio-db/</code> を削除。
+            </p>
+            <ResetCartridgeButton appId={c.id} />
+          </CardContent>
+        </Card>
+      </PhaseSection>
+
+      {/* ═══════════ Phase 2 · Studio Deploy ═══════════ */}
+      <PhaseSection
+        Icon={Clapperboard}
+        title="Phase 2 · Studio Deploy"
+        description="git push して GitHub 経由で Vercel に展開。クライアントレビュー用の共有 URL を確認します。"
+        accentClass="text-amber-700 dark:text-amber-400"
+      >
+        <PublishedBadge appId={c.id} />
+        <DeployInfoPanel appId={c.id} />
+      </PhaseSection>
+
+      {/* ═══════════ Phase 3 · AppHarbor 本番 ═══════════ */}
+      <PhaseSection
+        Icon={Rocket}
+        title="Phase 3 · AppHarbor 本番"
+        description="規約チェックを通過したら cartridges-registry.yaml に追加して本番反映。"
+        accentClass="text-emerald-700 dark:text-emerald-400"
+      >
+        <LintPanel appId={c.id} />
+        <ExportButton appId={c.id} />
+
+        {c.manifest && (
+          <Card>
+            <CardContent className="py-4">
+              <details className="text-sm">
+                <summary className="cursor-pointer select-none text-muted-foreground">
+                  manifest.json を表示
+                </summary>
+                <pre className="mt-3 overflow-auto rounded-md border bg-muted/30 p-3 font-mono text-xs">
+                  {JSON.stringify(c.manifest, null, 2)}
+                </pre>
+              </details>
+            </CardContent>
+          </Card>
+        )}
+      </PhaseSection>
+
     </div>
+  )
+}
+
+function PhaseSection({
+  Icon,
+  title,
+  description,
+  accentClass,
+  children,
+}: {
+  Icon:         React.ComponentType<{ className?: string }>
+  title:        string
+  description:  string
+  accentClass:  string
+  children:     React.ReactNode
+}) {
+  return (
+    <section className="mt-8 border-t pt-6">
+      <div className="mb-4">
+        <h2 className={cn('flex items-center gap-2 text-lg font-bold', accentClass)}>
+          <Icon className="h-5 w-5" />
+          {title}
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+      </div>
+      <div className="space-y-4">{children}</div>
+    </section>
   )
 }
 
