@@ -339,6 +339,18 @@ BOM なし UTF-8 を Shift-JIS と誤解釈し、謎の構文エラーになる�
 `.gitignore` で `[slug]` を使う時は `\[slug\]` とエスケープ。
 `[slug]` はキャラクタークラス (s, l, u, g の 1 文字) として解釈される。
 
+### Tailwind 4 の `[slug]` 問題（gitignore と同根）
+
+Tailwind 4 の自動 content 検出も内部で fast-glob を使うため、
+`app/org/[slug]/apps/...` 配下のカートリッジ utility class が CSS に出力されない。
+症状: `sm:hidden` が効かず、デスクトップでハンバーガーメニューが見える等。
+解決: `app/globals.css` で兄弟 cart-* リポと cartridges/ を `@source` で明示する。
+```css
+@source "../../cart-*/routes/**/*.{ts,tsx,js,jsx}";
+@source "../cartridges/**/*.{ts,tsx,js,jsx}";
+```
+（commit 409936f で適用済み）
+
 ### PGlite のパス
 
 Windows では PGlite のパスをフォワードスラッシュに変換する必要がある。
