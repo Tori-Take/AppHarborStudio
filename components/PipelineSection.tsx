@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Check, Loader2, ArrowRight, ChevronRight, AlertCircle, X, RotateCcw, Circle, RefreshCw, Copy, Plus } from 'lucide-react'
+import { Check, Loader2, ArrowRight, ChevronRight, AlertCircle, X, RotateCcw, Circle, RefreshCw, Copy, Plus, SkipForward } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useStageStatus, type StageNum } from '@/lib/use-stage-status'
@@ -295,6 +295,7 @@ export function PipelineSection({ appId }: { appId: string }) {
                   <p className="text-[11px] text-muted-foreground">
                     接続先: <code className="bg-muted px-1 rounded">postgresql://postgres:postgres@127.0.0.1:54322/postgres</code>
                   </p>
+                  <SkipStageLink stage={currentStage as StageNum} onSkip={markCompleted} />
                 </div>
               )}
 
@@ -326,6 +327,7 @@ export function PipelineSection({ appId }: { appId: string }) {
                       <div>STUDIO_CLOUD_SUPABASE_DB_URL=postgresql://postgres.[ref]:[pass]@...pooler.supabase.com:6543/postgres</div>
                     </div>
                   </details>
+                  <SkipStageLink stage={currentStage as StageNum} onSkip={markCompleted} />
                 </div>
               )}
 
@@ -583,5 +585,22 @@ export function PipelineSection({ appId }: { appId: string }) {
         </div>
       )}
     </div>
+  )
+}
+
+function SkipStageLink({ stage, onSkip }: { stage: StageNum; onSkip: (s: StageNum) => void }) {
+  const stageDef = STAGES.find(s => s.num === stage)
+  return (
+    <button
+      onClick={() => {
+        if (confirm(`Stage ${stage} (${stageDef?.label}) をスキップしますか？\n\n後から戻って実行することもできます（完了バッジの 🔄 ボタン）。`)) {
+          onSkip(stage)
+        }
+      }}
+      className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors mt-1"
+    >
+      <SkipForward className="h-3 w-3" />
+      この段階をスキップ
+    </button>
   )
 }
