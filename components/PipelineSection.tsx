@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Check, Loader2, ArrowRight, ChevronRight, AlertCircle, X, RotateCcw, Circle, RefreshCw, Copy, Plus, SkipForward } from 'lucide-react'
+import { Check, Loader2, ArrowRight, ChevronRight, AlertCircle, X, RotateCcw, Circle, RefreshCw, Copy, Plus, SkipForward, FileCode } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useStageStatus, type StageNum } from '@/lib/use-stage-status'
@@ -70,6 +70,16 @@ type Stage4CheckResult = {
   repoSlug: string | null
 }
 
+type Stage5PrepareResult = {
+  checks: Stage4CheckItem[]
+  allOk: boolean
+  productionMigration: string
+  registryEntry: string
+  repoSlug: string | null
+  cartridgeId: string
+  version: string
+}
+
 export function PipelineSection({ appId }: { appId: string }) {
   const { stages, currentStage, markCompleted, markError, rollbackTo } = useStageStatus(appId)
   const [busy, setBusy] = useState(false)
@@ -78,6 +88,9 @@ export function PipelineSection({ appId }: { appId: string }) {
   const [stage4Loading, setStage4Loading] = useState(false)
   const [stage4ActionBusy, setStage4ActionBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [stage5, setStage5] = useState<Stage5PrepareResult | null>(null)
+  const [stage5Loading, setStage5Loading] = useState(false)
+  const [stage5Copied, setStage5Copied] = useState<'migration' | 'registry' | null>(null)
 
   const fetchStage4 = useCallback(async () => {
     setStage4Loading(true)
@@ -92,9 +105,25 @@ export function PipelineSection({ appId }: { appId: string }) {
     finally { setStage4Loading(false) }
   }, [appId, markCompleted])
 
+  const fetchStage5 = useCallback(async () => {
+    setStage5Loading(true)
+    try {
+      const res = await fetch(`/api/cartridges/${encodeURIComponent(appId)}/stage5-prepare`)
+      if (res.ok) {
+        const j = await res.json() as Stage5PrepareResult
+        setStage5(j)
+      }
+    } catch { /* ignore */ }
+    finally { setStage5Loading(false) }
+  }, [appId])
+
   useEffect(() => {
     if (currentStage === 4) fetchStage4()
   }, [currentStage, fetchStage4])
+
+  useEffect(() => {
+    if (currentStage === 5) fetchStage5()
+  }, [currentStage, fetchStage5])
 
   const currentDef = STAGES.find(s => s.num === currentStage)
 
@@ -569,17 +598,136 @@ export function PipelineSection({ appId }: { appId: string }) {
                 Stage 5: AppHarbor 本番統合
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                AppHarbor 本体に統合 — 各組織がインストール可能になります
+                AppHarbor 本体に統合 — 各組織がインストール可能になります。
+                以下の成果物を生成し、AppHarbor リポへ PR を送ります。
               </p>
-              <div className="mt-3">
-                <Button size="sm" disabled className="gap-1.5">
-                  AppHarbor registry エントリを生成
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
-                <span className="ml-2 text-[11px] text-muted-foreground">
-                  (未実装 — 順次追加していきます)
-                </span>
-              </div>
+
+              {/* チェックリスト */}
+              {stage5Loading && !stage5 && (
+                <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  準備状況をチェック中...
+                </div>
+              )}
+
+              {stage5 && (
+                <div className="mt-3 space-y-3">
+                  {/* Readiness checks */}
+                  <div className="space-y-1.5">
+                    {stage5.checks.map(item => (
+                      <div key={item.id} className="flex items-start gap-2 text-xs">
+                        {item.ok
+                          ? <Check className="h-3.5 w-3.5 mt-0.5 shrink-0 text-emerald-500" />
+                          : <Circle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />}
+                        <div>
+                          <span className={cn('font-medium', item.ok ? 'text-emerald-700' : 'text-foreground')}>
+                            {item.label}
+                          </span>
+                          <span className="ml-1.5 text-muted-foreground">{item.detail}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Generated artifacts */}
+                  <div className="space-y-2">
+                    {/* Production migration */}
+                    {stage5.productionMigration && (
+                      <details className="text-[11px] text-muted-foreground">
+                        <summary className="cursor-pointer hover:text-foreground flex items-center gap-1.5">
+                          <FileCode className="h-3.5 w-3.5" />
+                          本番用 migration SQL
+                        </summary>
+                        <pre className="mt-1.5 rounded border bg-muted/30 px-2 py-1.5 font-mono whitespace-pre overflow-x-auto max-h-60 overflow-y-auto text-[10px]">
+                          {stage5.productionMigration}
+                        </pre>
+                      </details>
+                    )}
+
+                    {/* Registry entry */}
+                    {stage5.registryEntry && (
+                      <details className="text-[11px] text-muted-foreground">
+                        <summary className="cursor-pointer hover:text-foreground flex items-center gap-1.5">
+                          <FileCode className="h-3.5 w-3.5" />
+                          AppHarbor registry エントリ (YAML)
+                        </summary>
+                        <pre className="mt-1.5 rounded border bg-muted/30 px-2 py-1.5 font-mono whitespace-pre overflow-x-auto">
+                          {stage5.registryEntry}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Copy migration */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(stage5.productionMigration)
+                        setStage5Copied('migration')
+                        setTimeout(() => setStage5Copied(null), 2000)
+                      }}
+                      disabled={!stage5.productionMigration}
+                      className="gap-1.5"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      {stage5Copied === 'migration' ? 'コピー済み' : 'Migration をコピー'}
+                    </Button>
+
+                    {/* Copy registry entry */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(stage5.registryEntry)
+                        setStage5Copied('registry')
+                        setTimeout(() => setStage5Copied(null), 2000)
+                      }}
+                      className="gap-1.5"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      {stage5Copied === 'registry' ? 'コピー済み' : 'Registry をコピー'}
+                    </Button>
+
+                    {/* Refresh */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={fetchStage5}
+                      disabled={stage5Loading}
+                      className="gap-1.5"
+                    >
+                      <RefreshCw className={cn('h-3.5 w-3.5', stage5Loading && 'animate-spin')} />
+                      再チェック
+                    </Button>
+
+                    {/* Mark complete */}
+                    {stage5.allOk && (
+                      <Button
+                        size="sm"
+                        onClick={() => markCompleted(5)}
+                        className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        Stage 5 完了
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Guidance */}
+                  <div className="rounded border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-[11px] text-blue-800 space-y-1">
+                    <div className="font-semibold">📋 AppHarbor 本番統合の手順</div>
+                    <ol className="list-decimal ml-4 space-y-0.5">
+                      <li>上の「Migration をコピー」で SQL をコピー → AppHarbor リポの <code className="bg-blue-500/10 px-0.5 rounded">supabase/migrations/</code> に保存</li>
+                      <li>「Registry をコピー」で YAML をコピー → AppHarbor リポの <code className="bg-blue-500/10 px-0.5 rounded">cartridges-registry.yaml</code> に追加</li>
+                      <li><code className="bg-blue-500/10 px-0.5 rounded">supabase db push</code> で本番 DB に migration を適用</li>
+                      <li>AppHarbor リポに PR を作成 → レビュー → マージ</li>
+                    </ol>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

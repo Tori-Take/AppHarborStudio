@@ -155,6 +155,85 @@ STUDIO_CLOUD_SUPABASE_DB_URL=postgresql://postgres.[ref]:[password]@aws-0-[regio
 
 ---
 
+## 2026-05-17 (3): Stage 4 (Vercel Studio 登録) チェックリスト + スキップボタン
+
+### 実装したこと
+
+1. **Stage 4 チェックリスト UI**
+   - `GET /api/cartridges/[appId]/stage4-check` — 3 項目を自動チェック:
+     - GitHub リポジトリの有無 (git remote origin から判定)
+     - 最新コードが push 済みか (unpushed commits + uncommitted changes)
+     - `cartridges-registry.yaml` にエントリがあるか
+   - `POST /api/cartridges/[appId]/stage4-check` — registry エントリを自動追加
+   - PipelineSection に Stage 4 専用 UI:
+     - チェック項目ごとに ✓ / ✗ を表示
+     - 「Registry に追加」ボタン (チェック失敗時)
+     - 「エントリをコピー」ボタン (YAML スニペットをクリップボード)
+     - 「再チェック」ボタン (状態をリフレッシュ)
+     - 全項目 OK で「Stage 4 完了」ボタンが出現
+   - registry エントリの YAML スニペットを `<details>` 内に表示
+
+2. **スキップボタン (Stage 2 / Stage 3)**
+   - `SkipStageLink` コンポーネントを新設
+   - Stage 2 (Docker Supabase) と Stage 3 (Studio Cloud Supabase) の下部に表示
+   - クリックで当該 Stage を完了マークして次に進む
+   - 用途: 環境変数未設定時や Docker/Supabase を使わないカートリッジのフロー短縮
+
+3. **findRegistryEntry() — 軽量 YAML パーサー**
+   - 外部ライブラリなしで `cartridges-registry.yaml` を行パース
+   - `id` / `repo` / `mode` / `ref` / `enabled` を構造化取得
+   - コメント行を無視、Windows 改行 (CRLF) 対応
+
+### 変更した主要ファイル
+
+| ファイル | 変更内容 |
+|---|---|
+| `app/api/cartridges/[appId]/stage4-check/route.ts` | **新規** — Stage 4 チェック GET + registry 追加 POST |
+| `components/PipelineSection.tsx` | Stage 4 UI + `SkipStageLink` コンポーネント追加 |
+
+### 次にやること
+
+- 本番ビルド + port 3100 でのブラウザ確認
+- パイプライン全 5 段階が繋がった状態での E2E フロー確認
+- AppHarbor 本体リポとの連携テスト (registry PR フロー)
+
+---
+
+## 2026-05-17 (4): Stage 5 (AppHarbor 本番統合) 実装
+
+### 実装したこと
+
+1. **`GET /api/cartridges/[appId]/stage5-prepare`**
+   - 4 項目のチェック:
+     - manifest.json の必須フィールド (id, name, tables, permissions)
+     - db/schema.sql の存在
+     - routes/ の存在
+     - GitHub リポジトリの有無
+   - 成果物の自動生成:
+     - 本番用 migration SQL (`studio` スキーマ → `public` スキーマ変換)
+     - AppHarbor registry エントリ YAML
+   - Migration 生成ロジック:
+     - `set search_path` / `create schema studio` を除去
+     - `studio.` プレフィックスを除去
+     - RLS ポリシー (organization_id ベース) を自動生成
+
+2. **PipelineSection.tsx Stage 5 UI**
+   - チェックリスト表示 (Stage 4 と同パターン)
+   - 「Migration をコピー」ボタン — 本番用 SQL をクリップボードに
+   - 「Registry をコピー」ボタン — AppHarbor 用 YAML をクリップボードに
+   - 折りたたみで生成 SQL / YAML をプレビュー表示
+   - 「Stage 5 完了」ボタン (全チェック OK 時)
+   - 手順ガイド (4 ステップの案内パネル)
+
+### 変更した主要ファイル
+
+| ファイル | 変更内容 |
+|---|---|
+| `app/api/cartridges/[appId]/stage5-prepare/route.ts` | **新規** — Stage 5 チェック + 本番用成果物生成 |
+| `components/PipelineSection.tsx` | Stage 5 UI を placeholder から完全実装に差し替え |
+
+---
+
 ## 2026-05-15: Studio UX 改善 (モード表示 / QR コード / ランチャー)
 
 ### 実装したこと
