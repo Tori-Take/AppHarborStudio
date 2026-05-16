@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Check, Loader2, ArrowRight, ChevronRight, AlertCircle, X, RotateCcw } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Check, Loader2, ArrowRight, ChevronRight, AlertCircle, X, RotateCcw, Circle, RefreshCw, Copy, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useStageStatus, type StageNum } from '@/lib/use-stage-status'
@@ -56,10 +56,45 @@ type MigrationResult = {
   step?: string
 }
 
+type Stage4CheckItem = {
+  id: string
+  label: string
+  ok: boolean
+  detail: string
+}
+
+type Stage4CheckResult = {
+  checks: Stage4CheckItem[]
+  allOk: boolean
+  snippet: string
+  repoSlug: string | null
+}
+
 export function PipelineSection({ appId }: { appId: string }) {
   const { stages, currentStage, markCompleted, markError, rollbackTo } = useStageStatus(appId)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<MigrationResult | null>(null)
+  const [stage4, setStage4] = useState<Stage4CheckResult | null>(null)
+  const [stage4Loading, setStage4Loading] = useState(false)
+  const [stage4ActionBusy, setStage4ActionBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const fetchStage4 = useCallback(async () => {
+    setStage4Loading(true)
+    try {
+      const res = await fetch(`/api/cartridges/${encodeURIComponent(appId)}/stage4-check`)
+      if (res.ok) {
+        const j = await res.json() as Stage4CheckResult
+        setStage4(j)
+        if (j.allOk) markCompleted(4)
+      }
+    } catch { /* ignore */ }
+    finally { setStage4Loading(false) }
+  }, [appId, markCompleted])
+
+  useEffect(() => {
+    if (currentStage === 4) fetchStage4()
+  }, [currentStage, fetchStage4])
 
   const currentDef = STAGES.find(s => s.num === currentStage)
 
@@ -124,6 +159,35 @@ export function PipelineSection({ appId }: { appId: string }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  const handleAddToRegistry = async () => {
+    if (stage4ActionBusy) return
+    setStage4ActionBusy(true)
+    try {
+      const res = await fetch(`/api/cartridges/${encodeURIComponent(appId)}/stage4-check`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const j = await res.json()
+      if (j.ok) {
+        await fetchStage4()
+      } else {
+        markError(4, j.error ?? 'registry 登録失敗')
+      }
+    } catch (e) {
+      markError(4, (e as Error).message)
+    } finally {
+      setStage4ActionBusy(false)
+    }
+  }
+
+  const handleCopySnippet = () => {
+    if (!stage4?.snippet) return
+    navigator.clipboard.writeText(stage4.snippet)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
@@ -265,16 +329,106 @@ export function PipelineSection({ appId }: { appId: string }) {
                 </div>
               )}
 
-              {/* Stage 4 (未実装) */}
+              {/* Stage 4: Vercel Studio 登録 (チェックリスト) */}
               {currentStage === 4 && (
-                <div className="mt-3">
-                  <Button size="sm" disabled className="gap-1.5">
-                    {currentDef.actionLabel}
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </Button>
-                  <span className="ml-2 text-[11px] text-muted-foreground">
-                    (未実装 — 順次追加していきます)
-                  </span>
+                <div className="mt-3 space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    カートリッジを GitHub に push し、Studio の registry に登録します。
+                    DB は Stage 3 と同じクラウド Supabase をそのまま使います。
+                  </p>
+
+                  {/* チェックリスト */}
+                  {stage4Loading && !stage4 && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      チェック中...
+                    </div>
+                  )}
+
+                  {stage4 && (
+                    <div className="space-y-1.5">
+                      {stage4.checks.map(item => (
+                        <div key={item.id} className="flex items-start gap-2 text-xs">
+                          {item.ok
+                            ? <Check className="h-3.5 w-3.5 mt-0.5 shrink-0 text-emerald-500" />
+                            : <Circle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />}
+                          <div>
+                            <span className={cn('font-medium', item.ok ? 'text-emerald-700' : 'text-foreground')}>
+                              {item.label}
+                            </span>
+                            <span className="ml-1.5 text-muted-foreground">{item.detail}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* アクションボタン */}
+                  {stage4 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* registry 未登録の場合: 追加ボタン */}
+                      {!stage4.checks.find(c => c.id === 'registry')?.ok && (
+                        <Button
+                          size="sm"
+                          onClick={handleAddToRegistry}
+                          disabled={stage4ActionBusy || !stage4.checks.find(c => c.id === 'github')?.ok}
+                          className="gap-1.5"
+                        >
+                          {stage4ActionBusy
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <Plus className="h-3.5 w-3.5" />}
+                          Registry に追加
+                        </Button>
+                      )}
+
+                      {/* スニペットコピー */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCopySnippet}
+                        className="gap-1.5"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        {copied ? 'コピー済み' : 'エントリをコピー'}
+                      </Button>
+
+                      {/* 再チェック */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={fetchStage4}
+                        disabled={stage4Loading}
+                        className="gap-1.5"
+                      >
+                        <RefreshCw className={cn('h-3.5 w-3.5', stage4Loading && 'animate-spin')} />
+                        再チェック
+                      </Button>
+
+                      {/* 全 OK なら手動完了ボタン */}
+                      {stage4.allOk && !stages[4].completed && (
+                        <Button
+                          size="sm"
+                          onClick={() => markCompleted(4)}
+                          className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          Stage 4 完了
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* スニペット詳細 */}
+                  {stage4?.snippet && (
+                    <details className="text-[11px] text-muted-foreground">
+                      <summary className="cursor-pointer hover:text-foreground">
+                        registry エントリ (YAML)
+                      </summary>
+                      <pre className="mt-1.5 rounded border bg-muted/30 px-2 py-1.5 font-mono whitespace-pre overflow-x-auto">
+                        {stage4.snippet}
+                      </pre>
+                    </details>
+                  )}
                 </div>
               )}
 
