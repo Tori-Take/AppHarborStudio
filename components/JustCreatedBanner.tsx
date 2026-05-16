@@ -1,34 +1,41 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { PartyPopper, X, Trash2, Loader2 } from 'lucide-react'
+import { PartyPopper, X, Trash2, Loader2, Copy, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { buildQuickAiPrompt, type AiContext } from '@/lib/ai-context-prompt'
 
 type Props = {
   appId:       string
   displayName: string
 }
 
-/**
- * 新規作成直後だけ表示する完了バナー。
- *
- * URL に `?just-created=1` が付いている時のみ表示される。
- * Step1CreateForm がリダイレクト時にこのクエリを付ける。
- *
- * - [閉じる] → URL から `?just-created=1` を消す (banner が消える)
- * - [やり直す] → 確認後、削除 API を呼んで /cartridge/new へ
- */
 export function JustCreatedBanner({ appId, displayName }: Props) {
   const router = useRouter()
   const sp     = useSearchParams()
   const [busy, setBusy] = useState(false)
+  const [aiCtx, setAiCtx] = useState<AiContext | null>(null)
+  const [copied, setCopied] = useState(false)
 
-  // クエリパラメータが無い時は表示しない
+  useEffect(() => {
+    fetch(`/api/cartridges/${encodeURIComponent(appId)}/ai-context`)
+      .then(r => r.ok ? r.json() : null).then(j => setAiCtx(j)).catch(() => {})
+  }, [appId])
+
   if (sp.get('just-created') !== '1') return null
 
   const handleDismiss = () => {
     router.replace(`/cartridge/${encodeURIComponent(appId)}`)
+  }
+
+  const handleCopyAiContext = async () => {
+    if (!aiCtx) return
+    try {
+      await navigator.clipboard.writeText(buildQuickAiPrompt(aiCtx))
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    } catch { alert('コピーに失敗しました') }
   }
 
   const handleRestart = async () => {
@@ -58,7 +65,7 @@ export function JustCreatedBanner({ appId, displayName }: Props) {
   }
 
   return (
-    <div className="mb-6 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4">
+    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4">
       <div className="flex items-start gap-3">
         <PartyPopper className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-500" />
         <div className="flex-1">
@@ -67,9 +74,18 @@ export function JustCreatedBanner({ appId, displayName }: Props) {
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             雛形フォルダと <code className="rounded bg-muted px-1 text-xs">.appharbor/</code> (SDK + 規約) を配置しました。
-            下の <strong>「開発タブ」</strong> → <strong>「AI 開発コンテキスト」</strong> を <strong>📋 コピー</strong> して Claude Code に貼り付けてください。
+            AI 開発コンテキストをコピーして Claude Code に貼り付けてください。
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              onClick={handleCopyAiContext}
+              disabled={!aiCtx || busy}
+              className="gap-1.5"
+            >
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? 'コピー済み!' : 'AI コンテキストをコピー'}
+            </Button>
             <Button
               variant="outline"
               size="sm"

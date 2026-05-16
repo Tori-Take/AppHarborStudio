@@ -685,6 +685,148 @@ AppHarbor 本体の CLAUDE.md にも同様の整理がある（"今の Studio �
 
 ---
 
+## 🚀 5 段階リリースフロー（2026-05-17 決定）
+
+> 2026-05-17 の壁打ちで採用した、カートリッジ作成から本番投入までの 5 段階フロー。
+> **各段階で変化する要素を 1 つに絞る**ことでバグの切り分けを容易にする設計。
+
+### 5 段階の全体像
+
+| 段階 | Studio | カートリッジ | DB | DB プロジェクト |
+|---|---|---|---|---|
+| **1** | ローカル | ローカル | PGlite | (なし) |
+| **2** | ローカル | ローカル | Docker Supabase | 個人 PC の Docker |
+| **3** | ローカル | ローカル | クラウド Supabase | **Studio 専用** |
+| **4** | Vercel Studio | GitHub から取り込み | クラウド Supabase | **Studio 専用** (3 と同じ) |
+| **5** | AppHarbor 本体 | GitHub から取り込み | クラウド Supabase | **AppHarbor 本番** |
+
+### 各段階の目的
+
+#### Stage 1: ローカル Studio + ローカルカートリッジ + PGlite
+- 即時イテレーション、セットアップ不要
+- 「カートリッジのロジックを書く」ことに集中
+- データはサンプルでリセット気軽
+
+#### Stage 2: ローカル Studio + ローカルカートリッジ + **Docker Supabase**
+- 本物の Postgres で挙動確認 (RLS / Auth)
+- `supabase start` で起動 (ネット不要)
+- PGlite では出ないバグをここで潰す
+
+#### Stage 3: ローカル Studio + ローカルカートリッジ + **Studio 専用クラウド Supabase**
+- クラウド DB との接続・遅延を確認
+- 本番 AppHarbor とは完全分離した Supabase プロジェクト
+- Stage 4 で Web Studio が同じ DB を使うので、データはここで完成させる
+
+#### Stage 4: **Vercel Studio** + GitHub 取り込み + Studio 専用 Supabase
+- Studio 自体が Vercel にデプロイされた状態で動作確認
+- カートリッジは GitHub から `fetch-cartridges` で取り込み
+- registry の動作 + デプロイ環境での動作を検証
+- DB は Stage 3 と同じなのでデータ引き継ぎ自動
+
+#### Stage 5: **AppHarbor 本体** + GitHub 取り込み + 本番 Supabase
+- 実運用環境への投入
+- AppHarbor 本体の `cartridges-registry.yaml` に登録
+- 本番 Supabase (`public` スキーマ) に migration 適用
+- 各組織がインストールして使う
+
+### 段階間で「変わるもの」
+
+各段階で 1 つだけ変えるのが原則:
+
+```
+Stage 1 → 2: DB エンジン変更 (PGlite → Postgres)
+             変更点: 接続先を Docker に向ける + schema 適用
+
+Stage 2 → 3: DB 場所変更 (Docker → クラウド)
+             変更点: 接続先を Studio Supabase に向ける + schema 適用
+
+Stage 3 → 4: Studio 場所変更 (ローカル → Vercel)
+             カートリッジソース変更 (ローカル → GitHub)
+             変更点: カートリッジ push + Studio registry 登録
+             DB は変わらない (データ引き継ぎ自動)
+
+Stage 4 → 5: プラットフォーム変更 (Studio → AppHarbor)
+             DB プロジェクト変更 (Studio → AppHarbor 本番)
+             変更点: AppHarbor registry 登録 + 本番 Supabase に migration 適用
+```
+
+### なぜ Supabase プロジェクトを分けるか (Stage 3-4 vs Stage 5)
+
+**Studio 専用 Supabase プロジェクト** と **AppHarbor 本番 Supabase プロジェクト** を別にする:
+
+| 項目 | 同一プロジェクト (`studio` スキーマ分離) | 別プロジェクト (採用) |
+|---|---|---|
+| 本番データへの事故リスク | あり (権限ミスで public 破壊の可能性) | **なし** |
+| コスト | 1 プロジェクト分 | 2 プロジェクト分 (無料枠で十分) |
+| 開発者の心理的安全性 | 「壊したらどうしよう」 | **自由に実験できる** |
+| リセット容易さ | 慎重に DELETE | **プロジェクトごと作り直し OK** |
+
+**判断: 本番 AppHarbor を絶対に汚さない安全性を優先**。
+
+### グローバル CLAUDE.md ルールとの整合
+
+ユーザーの global CLAUDE.md にあるルール:
+
+> **Supabase マイグレーションは必ず CLI で実行する**
+> `supabase/migrations/*.sql` ファイル + `supabase db push` で行う
+
+このルールと 5 段階フローは整合的:
+
+```
+[Stage 1 → 2] supabase start + supabase db push   (Docker)
+[Stage 2 → 3] supabase db push --linked            (Studio プロジェクト)
+[Stage 3 → 4] git push + Studio Vercel が registry から fetch
+[Stage 4 → 5] AppHarbor 本体で supabase db push --linked (本番プロジェクト)
+              + AppHarbor 本体の registry に登録 + git push
+```
+
+### AppHarbor 本体も同じ registry + fetch 機構を持つ
+
+Stage 5 で Studio と AppHarbor 本体が **対称的な仕組み** を使う:
+
+```
+[Studio]                             [AppHarbor 本体]
+cartridges-registry.yaml             cartridges-registry.yaml
+  ↓                                   ↓
+fetch-cartridges.js                  fetch-cartridges.js (同等の仕組み)
+  ↓                                   ↓
+clone from GitHub                    clone from GitHub
+  ↓                                   ↓
+Studio 専用 Supabase                 本番 Supabase (public)
+```
+
+PatrolNavi はこの仕組みで既に Stage 5 を実証済み。
+
+### Studio が提供すべき機能
+
+| Stage 移行 | Studio が提供すべきもの |
+|---|---|
+| 1 → 2 | PGlite → Docker Supabase スキーマ同期 + データ移行ボタン |
+| 2 → 3 | Docker → Studio クラウド Supabase スキーマ同期 + 接続先切替 UI |
+| 3 → 4 | カートリッジを GitHub に push (AI に依頼) + Studio registry に追加 |
+| 4 → 5 | AppHarbor registry エントリ生成 + 本番 Supabase migration 生成 |
+
+### 実装計画
+
+| 順序 | 機能 | 対応 Stage 移行 |
+|---|---|---|
+| 1 | CLAUDE.md にこの 5 段階フローを記載 | (方針の文書化) |
+| 2 | ダッシュボードに「現在地」表示 (Stage 1〜5) | UI |
+| 3 | Stage 1 → 2 移行ボタン (PGlite → Docker Supabase) | 1 → 2 |
+| 4 | Stage 2 → 3 移行ボタン (Docker → Studio クラウド) | 2 → 3 |
+| 5 | Stage 3 → 4 案内 (GitHub push ガイド) | 3 → 4 |
+| 6 | Stage 4 → 5 案内 (AppHarbor registry エントリ生成) | 4 → 5 |
+
+### この設計で守る原則
+
+1. **PGlite はデフォルトのまま** — Stage 1 でセットアップなしで即動く
+2. **各 Stage は単独で完結** — 途中で止めても「デモ用」として使える
+3. **カートリッジコードは変更不要** — `@/sdk` の抽象化で吸収
+4. **本番 AppHarbor を絶対に汚さない** — Stage 4 までは Studio 専用 Supabase
+5. **段階移行は明示的アクション** — 自動進行しない (ユーザーが判断して進める)
+
+---
+
 ## API ルート一覧
 
 | エンドポイント | メソッド | 用途 |

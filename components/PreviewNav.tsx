@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation'
 import { useFullscreenMode } from '@/lib/use-fullscreen-mode'
 import { PhaseIndicator } from '@/components/PhaseIndicator'
 
+type QrInfo = { localUrl: string; qrDataUrl: string }
+
 type RestartPhase = 'idle' | 'signal' | 'waiting' | 'failed'
 
 async function restartStudioDev(setPhase: (p: RestartPhase) => void): Promise<boolean> {
@@ -56,8 +58,18 @@ export function PreviewNav() {
   const appId = m?.[1]
 
   const [info, setInfo] = useState<DeployInfo | null>(null)
-  // 再起動ボタンの状態 (early return より前に宣言する — Rules of Hooks)
   const [restartPhase, setRestartPhase] = useState<RestartPhase>('idle')
+  const [qr, setQr] = useState<QrInfo | null>(null)
+  const [showQr, setShowQr] = useState(false)
+  const [dbSource, setDbSource] = useState<'pglite' | 'docker' | 'studio-cloud'>('pglite')
+
+  useEffect(() => {
+    if (!appId) return
+    fetch(`/api/cartridges/${encodeURIComponent(appId)}/db-source`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => { if (j?.source) setDbSource(j.source) })
+      .catch(() => {})
+  }, [appId])
 
   useEffect(() => {
     if (!appId) return
@@ -65,6 +77,22 @@ export function PreviewNav() {
     fetch(`/api/cartridges/${encodeURIComponent(appId)}/deploy-info`)
       .then((r) => r.ok ? r.json() : null)
       .then((j) => { if (!cancelled && j) setInfo(j) })
+      .catch(() => {})
+    fetch('/api/studio-env')
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => {
+        if (!cancelled && j?.localUrl) {
+          const fullUrl = `${j.localUrl}${window.location.pathname}?fullscreen=1`
+          fetch(`/api/studio/qr?url=${encodeURIComponent(fullUrl)}`)
+            .then((r) => r.ok ? r.json() : null)
+            .then((qrJ) => {
+              if (!cancelled && qrJ?.qrDataUrl) {
+                setQr({ localUrl: fullUrl, qrDataUrl: qrJ.qrDataUrl })
+              }
+            })
+            .catch(() => {})
+        }
+      })
       .catch(() => {})
     return () => { cancelled = true }
   }, [appId])
@@ -152,6 +180,34 @@ export function PreviewNav() {
 
       <PhaseIndicator />
 
+      {/* DB ソース表示 */}
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          fontSize: 11,
+          padding: '2px 8px',
+          borderRadius: 4,
+          background:
+            dbSource === 'pglite'       ? 'rgba(100, 116, 139, 0.15)' :
+            dbSource === 'docker'       ? 'rgba(16, 185, 129, 0.15)' :
+                                          'rgba(168, 85, 247, 0.15)',
+          color:
+            dbSource === 'pglite'       ? '#94a3b8' :
+            dbSource === 'docker'       ? '#10b981' :
+                                          '#a855f7',
+          border: '1px solid currentColor',
+          fontFamily: 'ui-monospace, monospace',
+        }}
+        title="このカートリッジが今読み書きしているデータベース"
+      >
+        🗄
+        {dbSource === 'pglite'       ? 'PGlite'            :
+         dbSource === 'docker'       ? 'Docker Supabase'   :
+                                       'Studio Supabase'}
+      </span>
+
       {/* デプロイ状況のミニバッジ */}
       {info && (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
@@ -199,12 +255,31 @@ export function PreviewNav() {
         </span>
       )}
 
+      {qr && (
+        <button
+          onClick={() => setShowQr(true)}
+          title="スマホで QR コードをスキャンしてアクセス"
+          style={{
+            marginLeft: 'auto',
+            color: '#94a3b8',
+            fontSize: 12,
+            background: 'transparent',
+            border: '1px solid #334155',
+            borderRadius: 4,
+            padding: '4px 10px',
+            cursor: 'pointer',
+          }}
+        >
+          📱 スマホ
+        </button>
+      )}
+
       <button
         onClick={handleRestart}
         disabled={restartBusy}
         title="Studio dev server を kill + .next 削除 + 再起動 (webpack キャッシュ問題の解消用)"
         style={{
-          marginLeft: 'auto',
+          marginLeft: qr ? undefined : 'auto',
           color: restartBusy ? '#fca5a5' : '#fbbf24',
           fontSize: 12,
           background: 'transparent',
@@ -249,6 +324,54 @@ export function PreviewNav() {
       >
         ⛶ 全画面表示
       </button>
+
+      {showQr && qr && (
+        <div
+          onClick={() => setShowQr(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.5)',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 12,
+              borderRadius: 12,
+              background: '#fff',
+              padding: 24,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+            }}
+          >
+            <p style={{ fontSize: 14, fontWeight: 500, color: '#0f172a' }}>スマホで QR コードをスキャン</p>
+            <img src={qr.qrDataUrl} alt="QR Code" width={200} height={200} />
+            <span style={{ fontSize: 12, color: '#64748b', fontFamily: 'ui-monospace, monospace' }}>{qr.localUrl}</span>
+            <button
+              onClick={() => setShowQr(false)}
+              style={{
+                marginTop: 4,
+                border: '1px solid #e2e8f0',
+                borderRadius: 6,
+                padding: '6px 16px',
+                fontSize: 12,
+                color: '#64748b',
+                background: 'transparent',
+                cursor: 'pointer',
+              }}
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -175,12 +175,29 @@ export function isPathInScope(): boolean {
  * Supabase クライアント（モック版）
  * Phase 2 minimum: in-memory のみ。dev サーバー再起動で消える。
  */
-import { getSupabaseMock } from './supabase-mock'
+import { getLazySupabaseClient } from './supabase-lazy'
 
-export function createServerSupabase() {
-  return getSupabaseMock()
+/**
+ * カートリッジから呼ぶ Supabase クライアント。
+ *
+ * 戻り値は遅延解決プロキシ:
+ *   - 同期で「Supabase 風オブジェクト」を返す (既存カートリッジ API 互換)
+ *   - 実際の DB アクセスは await 時に発生し、リクエストの x-cartridge-id ヘッダーを見て
+ *     `lib/sdk-mock/db-source.ts` の設定 (pglite / docker / studio-cloud) を解決する
+ *
+ * 使用例:
+ *   const supabase = getAdminSupabase()
+ *   const { data } = await supabase.from('xxx').select('*').eq('a', 1)
+ *   const { data } = await supabase.storage.from('bucket').upload(file, ...)
+ *
+ * カートリッジコードは一切変更不要 (lazy proxy が透過的に切替)。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getAdminSupabase(): any {
+  return getLazySupabaseClient()
 }
 
-export function getAdminSupabase() {
-  return getSupabaseMock()
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createServerSupabase(): any {
+  return getLazySupabaseClient()
 }

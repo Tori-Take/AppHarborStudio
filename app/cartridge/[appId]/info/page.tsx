@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { getCartridge } from '@/lib/cartridge-scanner'
 import {
@@ -8,6 +8,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { DangerZone } from '@/components/DangerZone'
+import { ResetOnboardingButton } from '@/components/ResetOnboardingButton'
 
 /**
  * カートリッジの「アプリ情報」を作成時のフォーム形式で表示する読み取り専用ページ。
@@ -22,7 +23,7 @@ import { DangerZone } from '@/components/DangerZone'
 export default async function CartridgeInfoPage({ params }: { params: Promise<{ appId: string }> }) {
   const { appId } = await params
   const c = getCartridge(decodeURIComponent(appId))
-  if (!c) notFound()
+  if (!c) redirect('/')
 
   const detailHref          = `/cartridge/${encodeURIComponent(c.id)}`
   const manifestName        = (c.manifest?.name as string) ?? c.manifest?.displayName ?? c.id
@@ -83,6 +84,18 @@ export default async function CartridgeInfoPage({ params }: { params: Promise<{ 
               </div>
             )}
 
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">オンボーディング</CardTitle>
+            <CardDescription>
+              初回セットアップガイド「開発を始めましょう」を再度表示します。
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResetOnboardingButton appId={c.id} />
           </CardContent>
         </Card>
 
