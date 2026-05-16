@@ -46,9 +46,11 @@ export async function POST(req: Request) {
     "$d.UseDescriptionForTitle = $true",
     "$d.ShowNewFolderButton = $true",
     initialLine,
-    // ダイアログを最前面に出すための隠しフォーム
     "$tmp = New-Object System.Windows.Forms.Form",
     "$tmp.TopMost = $true",
+    "$tmp.ShowInTaskbar = $false",
+    "$tmp.Opacity = 0",
+    "$tmp.Size = New-Object System.Drawing.Size(0, 0)",
     "$tmp.Show()",
     "$tmp.Activate()",
     "$result = $d.ShowDialog($tmp)",

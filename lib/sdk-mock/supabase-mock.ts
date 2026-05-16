@@ -536,25 +536,69 @@ class SupabaseClientMock {
 }
 
 let _client: SupabaseClientMock | null = null
-// Vercel デプロイ時は実 Supabase (studio スキーマ) に切替
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _realClient: any = null
 
+/**
+ * 同期版: PGlite モックのみを返す。
+ * Vercel デプロイ環境では実 Supabase を返す (後方互換)。
+ *
+ * カートリッジ起動時の DB ソース切替 (pglite / docker / studio-cloud) は
+ * getSupabaseForCurrentCartridge() を使うこと。
+ */
 export function getSupabaseMock(): SupabaseClientMock {
   if (process.env.VERCEL) {
-    if (!_realClient) {
-      // 動的 require で local dev のバンドルサイズに影響させない
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { getRealSupabaseAdmin, isRealSupabaseConfigured } = require('./supabase-real')
-      if (isRealSupabaseConfigured()) {
-        _realClient = getRealSupabaseAdmin()
-        console.log('[supabase-mock] Vercel 環境検出 → 実 Supabase (studio スキーマ) を使用')
-      } else {
-        console.warn('[supabase-mock] STUDIO_SUPABASE_URL / STUDIO_SUPABASE_SERVICE_ROLE_KEY 未設定 → PGlite モックを使用')
-      }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getRealSupabaseAdmin, isRealSupabaseConfigured } = require('./supabase-real')
+    if (isRealSupabaseConfigured()) {
+      return getRealSupabaseAdmin() as SupabaseClientMock
     }
-    if (_realClient) return _realClient as SupabaseClientMock
   }
+  if (!_client) _client = new SupabaseClientMock()
+  return _client
+}
+
+/**
+ * 非同期版: x-cartridge-id ヘッダーから現在のカートリッジを特定し、
+ * 保存された DB ソース選択に従って適切なクライアントを返す。
+ *
+ * - pglite       → SupabaseClientMock (PGlite 経由)
+ * - docker       → Supabase JS Client (Docker のローカル Supabase, studio スキーマ)
+ * - studio-cloud → Supabase JS Client (Studio 専用クラウド, studio スキーマ)
+ *
+ * ヘッダーが無い (Studio 自身のページ) ときは PGlite。
+ * Vercel 環境では従来通り vercel-studio クライアント (環境変数で設定)。
+ */
+export async function getSupabaseForCurrentCartridge(): Promise<SupabaseClientMock> {
+  if (process.env.VERCEL) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getRealSupabaseAdmin, isRealSupabaseConfigured } = require('./supabase-real')
+    if (isRealSupabaseConfigured()) {
+      return getRealSupabaseAdmin() as SupabaseClientMock
+    }
+    if (!_client) _client = new SupabaseClientMock()
+    return _client
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { resolveCurrentDbSource, getCurrentCartridgeId } = require('./db-source') as typeof import('./db-source')
+  const appId  = await getCurrentCartridgeId()
+  const source = await resolveCurrentDbSource()
+  console.log(`[supabase-mock] resolve: appId=${appId} source=${source}`)
+
+  if (source === 'pglite') {
+    if (!_client) _client = new SupabaseClientMock()
+    return _client
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { getRealSupabaseAdminFor } = require('./supabase-real') as typeof import('./supabase-real')
+  const target = source === 'docker' ? 'docker' : 'studio-cloud'
+  const real = getRealSupabaseAdminFor(target)
+  if (real) {
+    console.log(`[supabase-mock] using ${target} client`)
+    return real as SupabaseClientMock
+  }
+
+  console.warn(`[supabase-mock] ${source} の設定が無いため PGlite にフォールバック`)
   if (!_client) _client = new SupabaseClientMock()
   return _client
 }

@@ -12,7 +12,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabaseMock } from '@/lib/sdk-mock/supabase-mock'
+import { getSupabaseForCurrentCartridge } from '@/lib/sdk-mock/supabase-mock'
 
 type FilterSpec =
   | { kind: 'eq';    col: string; val: unknown }
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ data: null, error: { message: 'invalid JSON' } }, { status: 400 })
   }
 
-  const sb = getSupabaseMock()
+  const sb = await getSupabaseForCurrentCartridge()
 
   if (body.type === 'auth') {
     if (body.auth.kind === 'getUser') {
