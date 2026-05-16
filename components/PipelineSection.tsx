@@ -100,6 +100,32 @@ export function PipelineSection({ appId }: { appId: string }) {
     }
   }
 
+  const handleMigrateToStudioCloud = async () => {
+    if (busy) return
+    setBusy(true)
+    setResult(null)
+    try {
+      const res = await fetch(`/api/cartridges/${encodeURIComponent(appId)}/migrate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ target: 'studio-cloud' }),
+      })
+      const j = await res.json() as MigrationResult
+      setResult(j)
+      if (j.ok) {
+        markCompleted(3)
+      } else {
+        markError(3, j.error ?? 'migration failed')
+      }
+    } catch (e) {
+      const msg = (e as Error).message
+      setResult({ ok: false, error: msg })
+      markError(3, msg)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -208,8 +234,39 @@ export function PipelineSection({ appId }: { appId: string }) {
                 </div>
               )}
 
-              {/* Stage 3, 4 (未実装) */}
-              {currentStage !== 2 && (
+              {/* Stage 3 へ移行 (Docker/PGlite → Studio Cloud Supabase) */}
+              {currentStage === 3 && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    <code className="bg-muted px-1 rounded">db/schema.sql</code> を適用後、
+                    PGlite のデータを Studio 専用クラウド Supabase に同期します (冪等)。
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" onClick={handleMigrateToStudioCloud} disabled={busy} className="gap-1.5">
+                      {busy
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <ArrowRight className="h-3.5 w-3.5" />}
+                      {busy ? '適用中...' : currentDef.actionLabel}
+                    </Button>
+                    <span className="text-[11px] text-muted-foreground">
+                      事前に <code className="bg-muted px-1 rounded">.env.local</code> に接続情報を設定
+                    </span>
+                  </div>
+                  <details className="text-[11px] text-muted-foreground">
+                    <summary className="cursor-pointer hover:text-foreground">
+                      必要な環境変数を確認
+                    </summary>
+                    <div className="mt-1.5 rounded border bg-muted/30 px-2 py-1.5 font-mono space-y-0.5">
+                      <div>STUDIO_CLOUD_SUPABASE_URL=https://xxxxx.supabase.co</div>
+                      <div>STUDIO_CLOUD_SUPABASE_SERVICE_ROLE_KEY=eyJ... or sb_secret_...</div>
+                      <div>STUDIO_CLOUD_SUPABASE_DB_URL=postgresql://postgres.[ref]:[pass]@...pooler.supabase.com:6543/postgres</div>
+                    </div>
+                  </details>
+                </div>
+              )}
+
+              {/* Stage 4 (未実装) */}
+              {currentStage === 4 && (
                 <div className="mt-3">
                   <Button size="sm" disabled className="gap-1.5">
                     {currentDef.actionLabel}

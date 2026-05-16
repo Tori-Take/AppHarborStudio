@@ -5,6 +5,7 @@ import { Client } from 'pg'
 import { getCartridge } from '@/lib/cartridge-scanner'
 import { getReadyPg } from '@/lib/sdk-mock/pg'
 import { setupDockerSupabase, type SetupResult } from '@/lib/sdk-mock/docker-supabase-setup'
+import { setupCloudSupabase } from '@/lib/sdk-mock/cloud-supabase-setup'
 
 const BASE_SUPABASE_SQL = resolve(process.cwd(), 'lib', 'sdk-mock', 'db-base-supabase.sql')
 const BASE_TABLES = ['organizations', 'departments', 'profiles', 'apps'] as const
@@ -13,7 +14,7 @@ const BASE_TABLES = ['organizations', 'departments', 'profiles', 'apps'] as cons
  * カートリッジを指定された Supabase に移行する。
  *
  * Stage 1 (PGlite) → 2 (Docker Supabase): target=docker
- * Stage 2 (Docker) → 3 (Studio Supabase): target=studio  (将来)
+ * Stage 2 (Docker) → 3 (Studio Cloud Supabase): target=studio-cloud
  *
  * 移行内容:
  *   1. schema.sql を適用 (冪等)
@@ -21,10 +22,10 @@ const BASE_TABLES = ['organizations', 'departments', 'profiles', 'apps'] as cons
  *
  * 接続先:
  *   - docker: env DOCKER_SUPABASE_DB_URL or postgresql://postgres:postgres@127.0.0.1:54322/postgres
- *   - studio: env STUDIO_SUPABASE_DB_URL
+ *   - studio-cloud: env STUDIO_CLOUD_SUPABASE_DB_URL
  */
 
-type MigrateTarget = 'docker' | 'studio'
+type MigrateTarget = 'docker' | 'studio-cloud'
 
 type MigrateBody = {
   target: MigrateTarget
@@ -43,8 +44,8 @@ function getConnectionString(target: MigrateTarget): string | null {
   if (target === 'docker') {
     return process.env.DOCKER_SUPABASE_DB_URL ?? DOCKER_DEFAULT_URL
   }
-  if (target === 'studio') {
-    return process.env.STUDIO_SUPABASE_DB_URL ?? null
+  if (target === 'studio-cloud') {
+    return process.env.STUDIO_CLOUD_SUPABASE_DB_URL ?? null
   }
   return null
 }
@@ -116,8 +117,8 @@ export async function POST(
     return NextResponse.json({ ok: false, error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  if (!body.target || (body.target !== 'docker' && body.target !== 'studio')) {
-    return NextResponse.json({ ok: false, error: 'target must be docker or studio' }, { status: 400 })
+  if (!body.target || (body.target !== 'docker' && body.target !== 'studio-cloud')) {
+    return NextResponse.json({ ok: false, error: 'target must be docker or studio-cloud' }, { status: 400 })
   }
 
   const c = getCartridge(id)
@@ -140,9 +141,12 @@ export async function POST(
     return NextResponse.json(
       {
         ok: false,
-        error: body.target === 'studio'
-          ? 'STUDIO_SUPABASE_DB_URL が設定されていません'
-          : 'Docker Supabase の接続先が解決できません',
+        error: body.target === 'studio-cloud'
+          ? 'STUDIO_CLOUD_SUPABASE_DB_URL が設定されていません。.env.local に接続情報を追加してください。'
+          : 'Docker Supabase の接続先が解決できませ���',
+        hint: body.target === 'studio-cloud'
+          ? 'Supabase ダッシュボードの Settings > Database から接続文字列をコピーし、.env.local に STUDIO_CLOUD_SUPABASE_DB_URL=postgresql://... を追加してください'
+          : undefined,
         step: 'config',
       },
       { status: 400 },
@@ -162,7 +166,7 @@ export async function POST(
         error: `接続失敗: ${msg}`,
         hint: body.target === 'docker'
           ? '`supabase start` で Docker Supabase が起動しているか確認してください'
-          : 'STUDIO_SUPABASE_DB_URL が正しいか確認してください',
+          : 'STUDIO_CLOUD_SUPABASE_DB_URL が正しいか確認してください。Supabase ダッシュボードの Settings > Database > Connection string (URI) をコピーしてください。',
         step: 'connect',
       },
       { status: 500 },
@@ -246,13 +250,15 @@ export async function POST(
 
   const duration = Date.now() - t0
 
-  // 5. Docker 接続用の環境設定を自動化 (target=docker のみ)
-  //    - supabase/config.toml の studio スキーマ公開確認/追加
-  //    - sb_secret_xxx キーを抽出して .env.local に書き込み
+  // 5. 環境セットアップ自動化
   let setup: SetupResult | null = null
-  if (body.target === 'docker' && errors.length === 0) {
+  if (errors.length === 0) {
     try {
-      setup = await setupDockerSupabase()
+      if (body.target === 'docker') {
+        setup = await setupDockerSupabase()
+      } else if (body.target === 'studio-cloud') {
+        setup = await setupCloudSupabase()
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       setup = {

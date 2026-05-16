@@ -55,10 +55,10 @@
 
 ### 次にやること
 
-- **Stage 2 → 3 (Docker → Studio クラウド Supabase) の移行ボタン実装**
-  - Studio 専用クラウド Supabase プロジェクトを別途用意 (本番 AppHarbor の Supabase と完全分離)
-  - 環境変数 `STUDIO_CLOUD_SUPABASE_DB_URL` / `STUDIO_CLOUD_SUPABASE_URL` / `STUDIO_CLOUD_SUPABASE_SERVICE_ROLE_KEY` の整備
-  - 同じ migrate ロジックで target=studio-cloud を流す (既に `supabase-real.ts` 側は分岐済み)
+- **Stage 3 のブラウザ動作テスト**
+  - Supabase クラウドプロジェクトを作成して `.env.local` に接続情報を設定
+  - 環境変数なし時のフレンドリーなエラー表示確認
+  - 環境変数あり時の migrate + DB ソース切替確認
 - **Stage 3 → 4 (Vercel Studio へ取り込み) の案内**
   - カートリッジを GitHub に push (AI に依頼するプロンプトを生成)
   - Studio の `cartridges-registry.yaml` に追加
@@ -107,6 +107,51 @@
 | `components/JustCreatedBanner.tsx` | 文言修正 + AI コンテキストコピーボタン内蔵 |
 | `next.config.ts` | `typescript.ignoreBuildErrors=true` を追加 (カートリッジ型エラーで本番起動が止まらないように) |
 | `package.json` | `pg` / `@types/pg` を追加 (Docker への直接 Postgres 接続用) |
+
+---
+
+## 2026-05-17 (2): Stage 3 (Studio クラウド Supabase) 移行ボタン実装
+
+### 実装したこと
+
+1. **migrate API の target 値統一**
+   - `target='studio'` (曖昧) → `target='studio-cloud'` に rename
+   - 環境変数名を `STUDIO_SUPABASE_DB_URL` → `STUDIO_CLOUD_SUPABASE_DB_URL` に統一
+   - エラーメッセージに具体的な修正ヒントを追加 (Supabase ダッシュボードのどこを見ればいいか)
+
+2. **`lib/sdk-mock/cloud-supabase-setup.ts` 新規作成**
+   - 環境変数チェック (3 つすべて揃っているか)
+   - PostgreSQL 接続テスト (SELECT 1)
+   - `studio` スキーマの存在確認 → 無ければ自動作成
+   - PostgREST 用 GRANT の確認 → 不足時は自動適用
+   - Exposed Schemas の設定案内 (API からは変更不可のため followUp で案内)
+
+3. **PipelineSection.tsx に Stage 3 ハンドラー追加**
+   - `handleMigrateToStudioCloud()` — Stage 2 と同パターン
+   - Stage 3 専用 UI: ボタン + 必要環境変数のドロップダウン表示
+   - 「(未実装)」バッジを Stage 4 のみに限定
+
+### 必要な環境変数 (`.env.local`)
+
+```
+STUDIO_CLOUD_SUPABASE_URL=https://xxxxx.supabase.co
+STUDIO_CLOUD_SUPABASE_SERVICE_ROLE_KEY=eyJ... or sb_secret_...
+STUDIO_CLOUD_SUPABASE_DB_URL=postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
+```
+
+### 変更した主要ファイル
+
+| ファイル | 変更内容 |
+|---|---|
+| `app/api/cartridges/[appId]/migrate/route.ts` | target 値を `studio-cloud` に統一、セットアップ呼び出し追加 |
+| `lib/sdk-mock/cloud-supabase-setup.ts` | **新規** — クラウド Supabase セットアップ自動化 |
+| `components/PipelineSection.tsx` | Stage 3 ハンドラー + UI を追加 |
+
+### 注意点
+
+- ワークツリーでの dev server 起動は Turbopack がシンボリックリンク (junction) を拒否するため不可。テストはメインリポにマージ後に実施すること。
+- Supabase クラウドの「Exposed Schemas」設定は API から変更できない → セットアップ完了後の followUp で案内する設計。
+- `SetupResult` 型は docker / cloud の両方で独立定義。同じシェイプなので migrate route 側の型推論に問題なし。
 
 ---
 
