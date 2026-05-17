@@ -21,7 +21,7 @@ const SOURCES: SourceDef[] = [
 ]
 
 export function DbSourceToggle({ appId }: { appId: string }) {
-  const { stages } = useStageStatus(appId)
+  const { stages, naStages } = useStageStatus(appId)
   const [current, setCurrent] = useState<DbSource>('pglite')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -67,9 +67,10 @@ export function DbSourceToggle({ appId }: { appId: string }) {
       </h4>
       <div className="grid grid-cols-3 gap-2">
         {SOURCES.map(s => {
+          const isNa = naStages.has(s.requiresStage)
           const stageDone = s.requiresStage === 1 || stages[s.requiresStage].completed
           const isActive = current === s.id
-          const isDisabled = !stageDone || busy
+          const isDisabled = isNa || !stageDone || busy
           return (
             <button
               key={s.id}
@@ -81,6 +82,7 @@ export function DbSourceToggle({ appId }: { appId: string }) {
                 !isActive && !isDisabled && 'border-border hover:bg-muted/50',
                 !isActive && isDisabled && 'border-border opacity-40 cursor-not-allowed',
               )}
+              title={isNa ? 'この環境では使えません (ローカル PC 限定)' : undefined}
             >
               <div className="flex w-full items-center justify-between">
                 <div className="flex items-center gap-1.5">
@@ -90,7 +92,11 @@ export function DbSourceToggle({ appId }: { appId: string }) {
                 {isActive && <Check className="h-3.5 w-3.5 text-emerald-600" />}
               </div>
               <div className="text-[10px] text-muted-foreground">{s.sublabel}</div>
-              {!stageDone && (
+              {isNa ? (
+                <div className="text-[10px] text-muted-foreground">
+                  この環境では非対応
+                </div>
+              ) : !stageDone && (
                 <div className="text-[10px] text-muted-foreground">
                   Stage {s.requiresStage} 完了後
                 </div>

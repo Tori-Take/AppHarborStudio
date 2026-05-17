@@ -40,11 +40,18 @@ export async function GET(
     return NextResponse.json({ error: 'cartridge not found' }, { status: 404 })
   }
 
+  const isVercel = process.env.VERCEL === '1' || !!process.env.VERCEL_ENV
   const auto: StageAutoStatus = { 1: true, 2: false, 3: false, 4: false, 5: false }
+  const naStages: StageNum[] = []
 
   // Stage 2: Docker Supabase 接続テスト
-  const dockerUrl = process.env.DOCKER_SUPABASE_DB_URL ?? DOCKER_DEFAULT_URL
-  auto[2] = await canConnect(dockerUrl)
+  //   Vercel 上では Docker は構造的に届かないので N/A 扱い (試行もスキップ)
+  if (isVercel) {
+    naStages.push(2)
+  } else {
+    const dockerUrl = process.env.DOCKER_SUPABASE_DB_URL ?? DOCKER_DEFAULT_URL
+    auto[2] = await canConnect(dockerUrl)
+  }
 
   // Stage 3: Studio Cloud Supabase 接続テスト
   if (process.env.STUDIO_CLOUD_SUPABASE_DB_URL) {
@@ -52,7 +59,7 @@ export async function GET(
   }
 
   // Stage 4: Vercel 環境 OR registry に installed エントリあり
-  if (process.env.VERCEL === '1' || process.env.VERCEL_ENV) {
+  if (isVercel) {
     auto[4] = true
   } else {
     auto[4] = isInstalledInRegistry(safe)
@@ -60,8 +67,10 @@ export async function GET(
 
   // Stage 5: 検出不可 (将来 AppHarbor 本体 registry 確認で対応)
 
-  return NextResponse.json({ auto })
+  return NextResponse.json({ auto, naStages, isVercel })
 }
+
+type StageNum = 1 | 2 | 3 | 4 | 5
 
 async function canConnect(connectionString: string): Promise<boolean> {
   const client = new Client({ connectionString, connectionTimeoutMillis: 2000 })

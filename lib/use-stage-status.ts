@@ -48,19 +48,25 @@ function writeStorage(appId: string, map: StageMap) {
 
 export function useStageStatus(appId: string) {
   const [stages, setStages] = useState<StageMap>(emptyMap)
+  const [naStages, setNaStages] = useState<Set<StageNum>>(() => new Set())
 
   useEffect(() => {
     // 初回 (localStorage 未初期化) はサーバーから実態を自動検出して初期値に
     const key = `${KEY_PREFIX}${appId}`
     const raw = typeof window !== 'undefined' ? localStorage.getItem(key) : null
-    if (raw === null && typeof window !== 'undefined') {
-      fetch(`/api/cartridges/${encodeURIComponent(appId)}/stage-status`)
-        .then(r => r.ok ? r.json() : null)
-        .then((j: { auto: Record<string, boolean> } | null) => {
-          if (!j?.auto) {
-            setStages(readStorage(appId))
-            return
-          }
+
+    // env 情報 (N/A stage 等) は localStorage に依らず毎回サーバーから取得
+    fetch(`/api/cartridges/${encodeURIComponent(appId)}/stage-status`)
+      .then(r => r.ok ? r.json() : null)
+      .then((j: { auto?: Record<string, boolean>; naStages?: number[] } | null) => {
+        const na = new Set<StageNum>()
+        if (j?.naStages) {
+          for (const s of j.naStages) na.add(s as StageNum)
+        }
+        setNaStages(na)
+
+        if (raw === null && j?.auto) {
+          // 初回: auto 値で localStorage を初期化
           const next = emptyMap()
           const now = new Date().toISOString()
           for (const s of [1, 2, 3, 4, 5] as StageNum[]) {
@@ -70,11 +76,11 @@ export function useStageStatus(appId: string) {
           }
           writeStorage(appId, next)
           setStages(next)
-        })
-        .catch(() => setStages(readStorage(appId)))
-    } else {
-      setStages(readStorage(appId))
-    }
+        } else {
+          setStages(readStorage(appId))
+        }
+      })
+      .catch(() => setStages(readStorage(appId)))
 
     // 別のコンポーネントが書き換えた時に同期
     const handler = (e: Event) => {
@@ -124,13 +130,20 @@ export function useStageStatus(appId: string) {
   }, [appId])
 
   const currentStage: StageNum = (() => {
+    // N/A stage は「完了相当」として扱う (環境上スキップ確定)
     for (let s = 5; s >= 1; s--) {
-      if (stages[s as StageNum].completed) {
-        return Math.min(s + 1, 5) as StageNum
+      const sn = s as StageNum
+      if (stages[sn].completed || naStages.has(sn)) {
+        // 次の Stage を返すが、その Stage も N/A ならスキップ
+        let next = Math.min(s + 1, 5) as StageNum
+        while (next < 5 && naStages.has(next)) {
+          next = (next + 1) as StageNum
+        }
+        return next
       }
     }
     return 1
   })()
 
-  return { stages, currentStage, markCompleted, markError, resetStage, rollbackTo }
+  return { stages, naStages, currentStage, markCompleted, markError, resetStage, rollbackTo }
 }

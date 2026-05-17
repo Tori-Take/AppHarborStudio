@@ -83,7 +83,7 @@ type Stage5PrepareResult = {
 }
 
 export function PipelineSection({ appId }: { appId: string }) {
-  const { stages, currentStage, markCompleted, markError, rollbackTo } = useStageStatus(appId)
+  const { stages, naStages, currentStage, markCompleted, markError, rollbackTo } = useStageStatus(appId)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<MigrationResult | null>(null)
   const [stage4, setStage4] = useState<Stage4CheckResult | null>(null)
@@ -235,7 +235,8 @@ export function PipelineSection({ appId }: { appId: string }) {
         <div className="grid grid-cols-5 gap-2">
           {STAGES.map((stage, idx) => {
             const isCompleted = stages[stage.num].completed
-            const isCurrent = currentStage === stage.num && !isCompleted
+            const isNa = naStages.has(stage.num)
+            const isCurrent = currentStage === stage.num && !isCompleted && !isNa
             const hasError = !!stages[stage.num].lastError
 
             return (
@@ -253,8 +254,11 @@ export function PipelineSection({ appId }: { appId: string }) {
                   isCompleted && 'border-emerald-500 bg-emerald-500/5',
                   isCurrent && !hasError && 'border-amber-500 bg-amber-500/5',
                   isCurrent && hasError && 'border-destructive bg-destructive/5',
-                  !isCompleted && !isCurrent && 'border-border bg-muted/20',
-                )}>
+                  isNa && 'border-border bg-muted/30 opacity-60',
+                  !isCompleted && !isCurrent && !isNa && 'border-border bg-muted/20',
+                )}
+                title={isNa ? 'この環境では使えません (ローカル PC 限定)' : undefined}
+                >
                   {/* 完了済み + Stage 2 以上で再実行ボタンを表示 */}
                   {isCompleted && stage.num >= 2 && (
                     <button
@@ -271,13 +275,16 @@ export function PipelineSection({ appId }: { appId: string }) {
                       isCompleted && 'bg-emerald-500 text-white',
                       isCurrent && !hasError && 'bg-amber-500 text-white',
                       isCurrent && hasError && 'bg-destructive text-white',
-                      !isCompleted && !isCurrent && 'bg-muted text-muted-foreground',
+                      isNa && 'bg-muted text-muted-foreground',
+                      !isCompleted && !isCurrent && !isNa && 'bg-muted text-muted-foreground',
                     )}>
-                      {isCompleted ? <Check className="h-4 w-4" /> : stage.num}
+                      {isCompleted ? <Check className="h-4 w-4" /> : isNa ? '—' : stage.num}
                     </span>
                   </div>
                   <div className="text-xs font-semibold">{stage.label}</div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">{stage.sublabel}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    {isNa ? 'この環境では非対応' : stage.sublabel}
+                  </div>
                 </div>
               </div>
             )
