@@ -29,3 +29,9 @@ cartridges:
   #   ref: main                # branch / tag / commit SHA
   #   mode: installed          # GitHub から clone (読み取り専用)
   #   enabled: true
+
+  - id: vehicle-equipment
+    repo: Tori-Take/vehicle-equipment
+    ref: main
+    mode: installed
+    enabled: true
