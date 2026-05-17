@@ -50,8 +50,10 @@ export async function POST(
   if (!existsSync(tmpDir)) mkdirSync(tmpDir, { recursive: true })
   const tmpConfig = join(tmpDir, `${safe}.tsconfig.json`)
 
-  // include パスは Studio root からの相対
-  const routesGlob = relative(STUDIO_ROOT, resolve(routesDir, '**/*.{ts,tsx}')).replace(/\\/g, '/')
+  // include パスは tsconfig ファイルからの相対 (tsc は {ts,tsx} brace expansion 非対応)
+  const routesFromTsconfig = relative(tmpDir, routesDir).replace(/\\/g, '/')
+  const routesGlobTs  = `${routesFromTsconfig}/**/*.ts`
+  const routesGlobTsx = `${routesFromTsconfig}/**/*.tsx`
 
   const tsconfigContent = {
     extends: '../../tsconfig.json',
@@ -61,7 +63,7 @@ export async function POST(
       pretty:      false,
       tsBuildInfoFile: null,
     },
-    include: [routesGlob],
+    include: [routesGlobTs, routesGlobTsx],
     exclude: ['node_modules', 'workspace', '.next', '.studio-db'],
   }
   writeFileSync(tmpConfig, JSON.stringify(tsconfigContent, null, 2), 'utf-8')
@@ -71,7 +73,7 @@ export async function POST(
   const result = spawnSync(
     process.platform === 'win32' ? 'npx.cmd' : 'npx',
     ['--no-install', 'tsc', '--noEmit', '-p', tmpConfig],
-    { cwd: STUDIO_ROOT, encoding: 'utf-8', timeout: 90_000, shell: false },
+    { cwd: STUDIO_ROOT, encoding: 'utf-8', timeout: 90_000, shell: true },
   )
   const duration = Date.now() - t0
 

@@ -35,3 +35,9 @@ cartridges:
     ref: main
     mode: installed
     enabled: true
+
+  - id: daily-log
+    repo: Tori-Take/cart-daily-log
+    ref: main
+    mode: installed
+    enabled: true
