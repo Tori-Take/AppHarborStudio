@@ -565,19 +565,10 @@ export function getSupabaseMock(): SupabaseClientMock {
  * - studio-cloud → Supabase JS Client (Studio 専用クラウド, studio スキーマ)
  *
  * ヘッダーが無い (Studio 自身のページ) ときは PGlite。
- * Vercel 環境では従来通り vercel-studio クライアント (環境変数で設定)。
+ * Vercel 環境では db-source.ts の defaultDbSource() が studio-cloud に
+ * フォールバックするので、Studio Cloud Supabase に接続される。
  */
 export async function getSupabaseForCurrentCartridge(): Promise<SupabaseClientMock> {
-  if (process.env.VERCEL) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { getRealSupabaseAdmin, isRealSupabaseConfigured } = require('./supabase-real')
-    if (isRealSupabaseConfigured()) {
-      return getRealSupabaseAdmin() as SupabaseClientMock
-    }
-    if (!_client) _client = new SupabaseClientMock()
-    return _client
-  }
-
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { resolveCurrentDbSource, getCurrentCartridgeId } = require('./db-source') as typeof import('./db-source')
   const appId  = await getCurrentCartridgeId()
@@ -596,6 +587,15 @@ export async function getSupabaseForCurrentCartridge(): Promise<SupabaseClientMo
   if (real) {
     console.log(`[supabase-mock] using ${target} client`)
     return real as SupabaseClientMock
+  }
+
+  // フォールバック: studio-cloud 未設定 + 旧 STUDIO_SUPABASE_* がある場合は
+  // 後方互換のため vercel-studio クライアントを試す
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { getRealSupabaseAdmin, isRealSupabaseConfigured } = require('./supabase-real')
+  if (process.env.VERCEL && isRealSupabaseConfigured()) {
+    console.log(`[supabase-mock] fallback to vercel-studio (legacy STUDIO_SUPABASE_*)`)
+    return getRealSupabaseAdmin() as SupabaseClientMock
   }
 
   console.warn(`[supabase-mock] ${source} の設定が無いため PGlite にフォールバック`)
