@@ -50,7 +50,31 @@ export function useStageStatus(appId: string) {
   const [stages, setStages] = useState<StageMap>(emptyMap)
 
   useEffect(() => {
-    setStages(readStorage(appId))
+    // 初回 (localStorage 未初期化) はサーバーから実態を自動検出して初期値に
+    const key = `${KEY_PREFIX}${appId}`
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(key) : null
+    if (raw === null && typeof window !== 'undefined') {
+      fetch(`/api/cartridges/${encodeURIComponent(appId)}/stage-status`)
+        .then(r => r.ok ? r.json() : null)
+        .then((j: { auto: Record<string, boolean> } | null) => {
+          if (!j?.auto) {
+            setStages(readStorage(appId))
+            return
+          }
+          const next = emptyMap()
+          const now = new Date().toISOString()
+          for (const s of [1, 2, 3, 4, 5] as StageNum[]) {
+            if (j.auto[String(s)]) {
+              next[s] = { completed: true, completedAt: now, lastError: null }
+            }
+          }
+          writeStorage(appId, next)
+          setStages(next)
+        })
+        .catch(() => setStages(readStorage(appId)))
+    } else {
+      setStages(readStorage(appId))
+    }
 
     // 別のコンポーネントが書き換えた時に同期
     const handler = (e: Event) => {
