@@ -236,6 +236,7 @@ export function PipelineSection({ appId }: { appId: string }) {
           {STAGES.map((stage, idx) => {
             const isCompleted = stages[stage.num].completed
             const isNa = naStages.has(stage.num)
+            const isPassedNa = isCompleted && isNa // 完了済み + この環境では非対応 (ローカル開発で通過済み)
             const isCurrent = currentStage === stage.num && !isCompleted && !isNa
             const hasError = !!stages[stage.num].lastError
 
@@ -245,22 +246,23 @@ export function PipelineSection({ appId }: { appId: string }) {
                 {idx < STAGES.length - 1 && (
                   <div className={cn(
                     'absolute top-4 left-[calc(50%+1rem)] right-[calc(-50%+1rem)] h-0.5 z-0',
-                    isCompleted ? 'bg-emerald-500' : 'bg-muted',
+                    isCompleted ? (isPassedNa ? 'bg-muted-foreground/30' : 'bg-emerald-500') : 'bg-muted',
                   )} />
                 )}
 
                 <div className={cn(
                   'group relative z-10 rounded-lg border-2 p-2.5 text-center transition-colors',
-                  isCompleted && 'border-emerald-500 bg-emerald-500/5',
+                  isPassedNa && 'border-border bg-muted/30 opacity-60',
+                  isCompleted && !isPassedNa && 'border-emerald-500 bg-emerald-500/5',
                   isCurrent && !hasError && 'border-amber-500 bg-amber-500/5',
                   isCurrent && hasError && 'border-destructive bg-destructive/5',
-                  isNa && 'border-border bg-muted/30 opacity-60',
+                  !isCompleted && isNa && 'border-border bg-muted/30 opacity-60',
                   !isCompleted && !isCurrent && !isNa && 'border-border bg-muted/20',
                 )}
-                title={isNa ? 'この環境では使えません (ローカル PC 限定)' : undefined}
+                title={isPassedNa ? 'ローカル開発で通過済み (この環境では操作不可)' : isNa ? 'この環境では使えません' : undefined}
                 >
-                  {/* 完了済み + Stage 2 以上で再実行ボタンを表示 */}
-                  {isCompleted && stage.num >= 2 && (
+                  {/* 完了済み + Stage 2 以上 + 操作可能 (= N/A でない) で再実行ボタンを表示 */}
+                  {isCompleted && stage.num >= 2 && !isPassedNa && (
                     <button
                       onClick={() => handleRollback(stage.num)}
                       className="absolute -top-2 -right-2 z-20 rounded-full bg-background border border-emerald-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-emerald-50"
@@ -272,10 +274,11 @@ export function PipelineSection({ appId }: { appId: string }) {
                   <div className="flex items-center justify-center mb-1.5">
                     <span className={cn(
                       'inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold',
-                      isCompleted && 'bg-emerald-500 text-white',
+                      isPassedNa && 'bg-muted-foreground/40 text-white',
+                      isCompleted && !isPassedNa && 'bg-emerald-500 text-white',
                       isCurrent && !hasError && 'bg-amber-500 text-white',
                       isCurrent && hasError && 'bg-destructive text-white',
-                      isNa && 'bg-muted text-muted-foreground',
+                      !isCompleted && isNa && 'bg-muted text-muted-foreground',
                       !isCompleted && !isCurrent && !isNa && 'bg-muted text-muted-foreground',
                     )}>
                       {isCompleted ? <Check className="h-4 w-4" /> : isNa ? '—' : stage.num}
@@ -283,7 +286,7 @@ export function PipelineSection({ appId }: { appId: string }) {
                   </div>
                   <div className="text-xs font-semibold">{stage.label}</div>
                   <div className="text-[10px] text-muted-foreground mt-0.5">
-                    {isNa ? 'この環境では非対応' : stage.sublabel}
+                    {isPassedNa ? 'ローカル開発で通過' : isNa ? 'この環境では非対応' : stage.sublabel}
                   </div>
                 </div>
               </div>

@@ -43,19 +43,25 @@ export async function GET(
   const isVercel = process.env.VERCEL === '1' || !!process.env.VERCEL_ENV
   const auto: StageAutoStatus = { 1: true, 2: false, 3: false, 4: false, 5: false }
   const naStages: StageNum[] = []
+  const unavailableSources: ('pglite' | 'docker' | 'studio-cloud')[] = []
 
-  // Stage 1 (PGlite): Vercel 上では in-memory + 揮発のため運用上 N/A
-  // Stage 2 (Docker): Vercel 上では localhost に届かないため N/A
   if (isVercel) {
-    naStages.push(1, 2)
+    // Vercel: Stage 1-3 はローカル開発で通った事実扱い (auto 完了マーク)
+    // ただしユーザー操作 (rollback, re-execute, DB ソース選択) は不可
+    auto[2] = true
+    auto[3] = true
+    naStages.push(1, 2, 3)
+    unavailableSources.push('pglite', 'docker')
   } else {
+    // ローカル: 実態を検出
     const dockerUrl = process.env.DOCKER_SUPABASE_DB_URL ?? DOCKER_DEFAULT_URL
     auto[2] = await canConnect(dockerUrl)
-  }
+    if (!auto[2]) unavailableSources.push('docker')
 
-  // Stage 3: Studio Cloud Supabase 接続テスト
-  if (process.env.STUDIO_CLOUD_SUPABASE_DB_URL) {
-    auto[3] = await canConnect(process.env.STUDIO_CLOUD_SUPABASE_DB_URL)
+    if (process.env.STUDIO_CLOUD_SUPABASE_DB_URL) {
+      auto[3] = await canConnect(process.env.STUDIO_CLOUD_SUPABASE_DB_URL)
+    }
+    if (!auto[3]) unavailableSources.push('studio-cloud')
   }
 
   // Stage 4: Vercel 環境 OR registry に installed エントリあり
@@ -67,7 +73,7 @@ export async function GET(
 
   // Stage 5: 検出不可 (将来 AppHarbor 本体 registry 確認で対応)
 
-  return NextResponse.json({ auto, naStages, isVercel })
+  return NextResponse.json({ auto, naStages, unavailableSources, isVercel })
 }
 
 type StageNum = 1 | 2 | 3 | 4 | 5

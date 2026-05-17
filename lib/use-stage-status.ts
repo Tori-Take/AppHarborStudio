@@ -46,9 +46,12 @@ function writeStorage(appId: string, map: StageMap) {
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: { appId } }))
 }
 
+export type DbSourceId = 'pglite' | 'docker' | 'studio-cloud'
+
 export function useStageStatus(appId: string) {
   const [stages, setStages] = useState<StageMap>(emptyMap)
   const [naStages, setNaStages] = useState<Set<StageNum>>(() => new Set())
+  const [unavailableSources, setUnavailableSources] = useState<Set<DbSourceId>>(() => new Set())
 
   useEffect(() => {
     // 初回 (localStorage 未初期化) はサーバーから実態を自動検出して初期値に
@@ -58,12 +61,20 @@ export function useStageStatus(appId: string) {
     // env 情報 (N/A stage 等) は localStorage に依らず毎回サーバーから取得
     fetch(`/api/cartridges/${encodeURIComponent(appId)}/stage-status`)
       .then(r => r.ok ? r.json() : null)
-      .then((j: { auto?: Record<string, boolean>; naStages?: number[] } | null) => {
+      .then((j: { auto?: Record<string, boolean>; naStages?: number[]; unavailableSources?: string[] } | null) => {
         const na = new Set<StageNum>()
         if (j?.naStages) {
           for (const s of j.naStages) na.add(s as StageNum)
         }
         setNaStages(na)
+
+        const us = new Set<DbSourceId>()
+        if (j?.unavailableSources) {
+          for (const s of j.unavailableSources) {
+            if (s === 'pglite' || s === 'docker' || s === 'studio-cloud') us.add(s)
+          }
+        }
+        setUnavailableSources(us)
 
         if (raw === null && j?.auto) {
           // 初回: auto 値で localStorage を初期化
@@ -145,5 +156,5 @@ export function useStageStatus(appId: string) {
     return 1
   })()
 
-  return { stages, naStages, currentStage, markCompleted, markError, resetStage, rollbackTo }
+  return { stages, naStages, unavailableSources, currentStage, markCompleted, markError, resetStage, rollbackTo }
 }
