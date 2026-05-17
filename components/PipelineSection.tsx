@@ -93,6 +93,8 @@ export function PipelineSection({ appId }: { appId: string }) {
   const [stage5, setStage5] = useState<Stage5PrepareResult | null>(null)
   const [stage5Loading, setStage5Loading] = useState(false)
   const [stage5Copied, setStage5Copied] = useState<'migration' | 'registry' | null>(null)
+  const [installBusy, setInstallBusy] = useState(false)
+  const [installResult, setInstallResult] = useState<{ ok: boolean; prUrl?: string; prNumber?: number; branch?: string; filesAdded?: number; error?: string } | null>(null)
 
   const fetchStage4 = useCallback(async () => {
     setStage4Loading(true)
@@ -211,6 +213,26 @@ export function PipelineSection({ appId }: { appId: string }) {
       markError(4, (e as Error).message)
     } finally {
       setStage4ActionBusy(false)
+    }
+  }
+
+  const handleInstallToAppHarbor = async () => {
+    if (installBusy) return
+    if (!confirm('AppHarbor 本番リポに install PR を作成します。よろしいですか?\n\n(マージ後、本番 Supabase に migration を適用する必要があります)')) return
+    setInstallBusy(true)
+    setInstallResult(null)
+    try {
+      const res = await fetch(`/api/cartridges/${encodeURIComponent(appId)}/install-to-appharbor`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const j = await res.json()
+      setInstallResult(j)
+    } catch (e) {
+      setInstallResult({ ok: false, error: (e as Error).message })
+    } finally {
+      setInstallBusy(false)
     }
   }
 
@@ -677,40 +699,85 @@ export function PipelineSection({ appId }: { appId: string }) {
                     )}
                   </div>
 
-                  {/* Action buttons */}
+                  {/* メインアクション: AppHarbor 本番に PR を作成 */}
+                  <div className="rounded border border-emerald-500/40 bg-emerald-500/5 p-3 space-y-2">
+                    <div className="text-xs font-semibold text-emerald-800">
+                      🚀 AppHarbor 本番リポに自動 install PR を作成
+                    </div>
+                    <p className="text-[11px] text-emerald-700">
+                      クリック 1 つで以下が自動実行されます:
+                      ①カートリッジコードを AppHarbor リポにコピー
+                      ②本番用 migration SQL を追加
+                      ③PR 作成 (あなたがレビュー → マージ → Vercel 自動デプロイ)
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={handleInstallToAppHarbor}
+                        disabled={installBusy}
+                        className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                      >
+                        {installBusy
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <ArrowRight className="h-3.5 w-3.5" />}
+                        {installBusy ? 'PR 作成中...' : 'AppHarbor に PR を作成'}
+                      </Button>
+                      {installResult?.ok && installResult.prUrl && (
+                        <a
+                          href={installResult.prUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-emerald-700 underline hover:text-emerald-900"
+                        >
+                          PR #{installResult.prNumber} を開く ({installResult.filesAdded} ファイル) →
+                        </a>
+                      )}
+                    </div>
+                    {installResult && !installResult.ok && (
+                      <div className="text-[11px] text-destructive">
+                        ❌ {installResult.error}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 補助: 手動でコピーしたい場合 */}
+                  <details className="text-[11px] text-muted-foreground">
+                    <summary className="cursor-pointer hover:text-foreground">
+                      手動で進めたい場合 (生成物のコピー)
+                    </summary>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(stage5.productionMigration)
+                          setStage5Copied('migration')
+                          setTimeout(() => setStage5Copied(null), 2000)
+                        }}
+                        disabled={!stage5.productionMigration}
+                        className="gap-1.5"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        {stage5Copied === 'migration' ? 'コピー済み' : 'Migration をコピー'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(stage5.registryEntry)
+                          setStage5Copied('registry')
+                          setTimeout(() => setStage5Copied(null), 2000)
+                        }}
+                        className="gap-1.5"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        {stage5Copied === 'registry' ? 'コピー済み' : 'Registry をコピー'}
+                      </Button>
+                    </div>
+                  </details>
+
+                  {/* 再チェック + 完了マーク */}
                   <div className="flex flex-wrap items-center gap-2">
-                    {/* Copy migration */}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        navigator.clipboard.writeText(stage5.productionMigration)
-                        setStage5Copied('migration')
-                        setTimeout(() => setStage5Copied(null), 2000)
-                      }}
-                      disabled={!stage5.productionMigration}
-                      className="gap-1.5"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                      {stage5Copied === 'migration' ? 'コピー済み' : 'Migration をコピー'}
-                    </Button>
-
-                    {/* Copy registry entry */}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        navigator.clipboard.writeText(stage5.registryEntry)
-                        setStage5Copied('registry')
-                        setTimeout(() => setStage5Copied(null), 2000)
-                      }}
-                      className="gap-1.5"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                      {stage5Copied === 'registry' ? 'コピー済み' : 'Registry をコピー'}
-                    </Button>
-
-                    {/* Refresh */}
                     <Button
                       variant="outline"
                       size="sm"
@@ -721,8 +788,6 @@ export function PipelineSection({ appId }: { appId: string }) {
                       <RefreshCw className={cn('h-3.5 w-3.5', stage5Loading && 'animate-spin')} />
                       再チェック
                     </Button>
-
-                    {/* Mark complete */}
                     {stage5.allOk && (
                       <Button
                         size="sm"
@@ -735,14 +800,14 @@ export function PipelineSection({ appId }: { appId: string }) {
                     )}
                   </div>
 
-                  {/* Guidance */}
+                  {/* PR マージ後の手順 */}
                   <div className="rounded border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-[11px] text-blue-800 space-y-1">
-                    <div className="font-semibold">📋 AppHarbor 本番統合の手順</div>
+                    <div className="font-semibold">📋 PR マージ後の作業</div>
                     <ol className="list-decimal ml-4 space-y-0.5">
-                      <li>上の「Migration をコピー」で SQL をコピー → AppHarbor リポの <code className="bg-blue-500/10 px-0.5 rounded">supabase/migrations/</code> に保存</li>
-                      <li>「Registry をコピー」で YAML をコピー → AppHarbor リポの <code className="bg-blue-500/10 px-0.5 rounded">cartridges-registry.yaml</code> に追加</li>
-                      <li><code className="bg-blue-500/10 px-0.5 rounded">supabase db push</code> で本番 DB に migration を適用</li>
-                      <li>AppHarbor リポに PR を作成 → レビュー → マージ</li>
+                      <li>AppHarbor リポを pull: <code className="bg-blue-500/10 px-0.5 rounded">git pull</code></li>
+                      <li>本番 Supabase に migration 適用: <code className="bg-blue-500/10 px-0.5 rounded">npx supabase db push --linked</code></li>
+                      <li>Vercel が自動でコードをデプロイ (push 完了から 1-2 分)</li>
+                      <li>AppHarbor 管理画面で「インストール可能アプリ」に出現 → 「インストール」 → 組織で有効化</li>
                     </ol>
                   </div>
                 </div>
