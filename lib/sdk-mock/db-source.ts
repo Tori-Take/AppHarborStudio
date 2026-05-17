@@ -27,11 +27,21 @@ function readStore(): Store {
 }
 
 /**
- * 指定 appId の DB ソースを返す。デフォルトは 'pglite'。
+ * 環境別デフォルト DB ソース。
+ *   Vercel: PGlite は in-memory + Docker は届かないので studio-cloud
+ *   ローカル: 従来通り pglite
+ */
+function defaultDbSource(): DbSource {
+  const isVercel = process.env.VERCEL === '1' || !!process.env.VERCEL_ENV
+  return isVercel ? 'studio-cloud' : 'pglite'
+}
+
+/**
+ * 指定 appId の DB ソースを返す。env 別のデフォルトにフォールバック。
  */
 export function getDbSourceFor(appId: string | null): DbSource {
-  if (!appId) return 'pglite'
-  return readStore()[appId] ?? 'pglite'
+  if (!appId) return defaultDbSource()
+  return readStore()[appId] ?? defaultDbSource()
 }
 
 /**
