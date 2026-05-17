@@ -94,7 +94,7 @@ export function PipelineSection({ appId }: { appId: string }) {
   const [stage5Loading, setStage5Loading] = useState(false)
   const [stage5Copied, setStage5Copied] = useState<'migration' | 'registry' | null>(null)
   const [installBusy, setInstallBusy] = useState(false)
-  const [installResult, setInstallResult] = useState<{ ok: boolean; prUrl?: string; prNumber?: number; branch?: string; filesAdded?: number; error?: string } | null>(null)
+  const [installResult, setInstallResult] = useState<{ ok: boolean; prUrl?: string; prNumber?: number; branch?: string; filesAdded?: number; mode?: 'registry' | 'files'; error?: string } | null>(null)
   const [typeCheckBusy, setTypeCheckBusy] = useState(false)
   const [typeCheckResult, setTypeCheckResult] = useState<{ ok: boolean; errors?: Array<{ file: string; line: number; col: number; code: string; message: string }>; duration?: number; error?: string } | null>(null)
 
@@ -793,7 +793,7 @@ export function PipelineSection({ appId }: { appId: string }) {
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-xs text-emerald-700 underline hover:text-emerald-900"
                         >
-                          PR #{installResult.prNumber} を開く ({installResult.filesAdded} ファイル) →
+                          PR #{installResult.prNumber} を開く ({installResult.filesAdded} ファイル, mode: {installResult.mode}) →
                         </a>
                       )}
                     </div>

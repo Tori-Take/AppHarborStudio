@@ -46,11 +46,14 @@ export type InstallPrOptions = {
   migrationSql: string
 }
 
+export type InstallMode = 'files' | 'registry'
+
 export type InstallPrResult = {
   prUrl:    string
   prNumber: number
   branch:   string
   filesAdded: number
+  mode:    InstallMode
 }
 
 async function gh<T = unknown>(
@@ -131,6 +134,25 @@ async function createBlob(
   return res.sha
 }
 
+/** ターゲットリポに cartridges-registry.yaml があるか確認 */
+async function targetHasRegistry(token: string, repo: string, ref: string): Promise<boolean> {
+  try {
+    await gh(token, 'GET', `/repos/${repo}/contents/cartridges-registry.yaml?ref=${ref}`)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** registry に新エントリ 1 行を追加した文字列を返す */
+function appendRegistryEntry(yaml: string, cartridgeId: string, cartridgeRepo: string, ref: string): string {
+  // 既にエントリがあるなら何もしない
+  const existsRe = new RegExp(`^\\s+-\\s+id:\\s*${cartridgeId.replace(/[-/\\^$*+?.()|[\\]{}]/g, '\\$&')}\\s*$`, 'm')
+  if (existsRe.test(yaml)) return yaml
+  const block = `\n  - id: ${cartridgeId}\n    repo: ${cartridgeRepo}\n    ref: ${ref}\n    mode: installed\n    enabled: true\n`
+  return yaml.trimEnd() + '\n' + block
+}
+
 export async function createCartridgeInstallPr(
   token: string,
   opts: InstallPrOptions,
@@ -138,32 +160,54 @@ export async function createCartridgeInstallPr(
   const sourceRef = opts.cartridgeRef ?? 'main'
   const targetBase = opts.targetBase ?? 'main'
 
-  // 1. ソースリポの全ファイルを列挙
-  const sourceFiles = await listSourceTree(token, opts.cartridgeRepo, sourceRef)
-  if (sourceFiles.length === 0) {
-    throw new Error(`ソースリポにファイルがありません: ${opts.cartridgeRepo}`)
-  }
+  // ターゲットリポが registry を持っているか確認 → mode 決定
+  const useRegistry = await targetHasRegistry(token, opts.targetRepo, targetBase)
+  const mode: InstallMode = useRegistry ? 'registry' : 'files'
 
-  // 2. 各ファイルを取得 → ターゲットに blob 作成
-  const additionalFiles: SourceFile[] = []
-  for (const f of sourceFiles) {
-    // .git や .github 等の特殊フォルダはスキップ (.github ワークフローは持ち込まない)
-    if (f.path.startsWith('.github/')) continue
-    if (f.path.startsWith('.git/')) continue
-    const content = await getBlobContent(token, opts.cartridgeRepo, f.sha)
-    additionalFiles.push({ path: f.path, content })
-  }
-
-  // 3. ターゲットリポに blob を作成 (バッチ並列)
   const treeEntries: TreeEntry[] = []
-  for (const f of additionalFiles) {
-    const blobSha = await createBlob(token, opts.targetRepo, f.content)
+  let filesProcessed = 0
+
+  if (mode === 'registry') {
+    // === registry モード: registry に 1 行追加するだけ ===
+    const cur = await gh<{ content: string; encoding: string; sha: string }>(
+      token, 'GET', `/repos/${opts.targetRepo}/contents/cartridges-registry.yaml?ref=${targetBase}`,
+    )
+    const currentYaml = Buffer.from(cur.content, 'base64').toString('utf-8')
+    const newYaml = appendRegistryEntry(currentYaml, opts.cartridgeId, opts.cartridgeRepo, sourceRef)
+    if (newYaml === currentYaml) {
+      throw new Error(`既に registry に ${opts.cartridgeId} が登録されています`)
+    }
+    const newSha = await createBlob(token, opts.targetRepo, newYaml)
     treeEntries.push({
-      path: `cartridges/${opts.cartridgeId}/${f.path}`,
+      path: 'cartridges-registry.yaml',
       mode: '100644',
       type: 'blob',
-      sha:  blobSha,
+      sha:  newSha,
     })
+    filesProcessed = 1
+  } else {
+    // === files モード (legacy): 全ファイルをコピー ===
+    const sourceFiles = await listSourceTree(token, opts.cartridgeRepo, sourceRef)
+    if (sourceFiles.length === 0) {
+      throw new Error(`ソースリポにファイルがありません: ${opts.cartridgeRepo}`)
+    }
+    const additionalFiles: SourceFile[] = []
+    for (const f of sourceFiles) {
+      if (f.path.startsWith('.github/')) continue
+      if (f.path.startsWith('.git/')) continue
+      const content = await getBlobContent(token, opts.cartridgeRepo, f.sha)
+      additionalFiles.push({ path: f.path, content })
+    }
+    for (const f of additionalFiles) {
+      const blobSha = await createBlob(token, opts.targetRepo, f.content)
+      treeEntries.push({
+        path: `cartridges/${opts.cartridgeId}/${f.path}`,
+        mode: '100644',
+        type: 'blob',
+        sha:  blobSha,
+      })
+    }
+    filesProcessed = additionalFiles.length
   }
 
   // 4. Migration SQL を tree に追加
@@ -208,16 +252,22 @@ export async function createCartridgeInstallPr(
   )
 
   // 9. PR 作成
+  const modeNote = mode === 'registry'
+    ? `\`cartridges-registry.yaml\` に 1 行追加するだけの軽量 PR (registry モード)。\nVercel ビルド時に \`scripts/fetch-cartridges.js\` が GitHub から自動 clone する。`
+    : `\`cartridges/${opts.cartridgeId}/\` 配下のファイルを直接コピー (files モード)。\nターゲットリポに \`cartridges-registry.yaml\` がないため legacy モードで動作。`
+
   const prBody = [
     `**カートリッジ install (自動生成 PR)**`,
     '',
     `- カートリッジ: \`${opts.cartridgeId}\` v${opts.version}`,
     `- ソース: https://github.com/${opts.cartridgeRepo} (\`${sourceRef}\`)`,
-    `- 追加ファイル数: ${treeEntries.length} (うち migration 1)`,
+    `- モード: **${mode}** (${filesProcessed} ファイル + migration 1)`,
+    '',
+    modeNote,
     '',
     `### マージ後の手順`,
     '',
-    `1. Vercel が自動で再ビルド → カートリッジが \`cartridges/${opts.cartridgeId}/\` に展開される`,
+    `1. Vercel が自動で再ビルド ${mode === 'registry' ? '→ fetch-cartridges が GitHub から clone → sync-cartridges が app/ にマウント' : `→ カートリッジが \`cartridges/${opts.cartridgeId}/\` に展開される`}`,
     `2. **本番 Supabase に migration 適用** (まだ自動化されてない):`,
     `   \`\`\`bash`,
     `   cd /path/to/appharbor`,
@@ -244,5 +294,6 @@ export async function createCartridgeInstallPr(
     prNumber:   pr.number,
     branch:     branchName,
     filesAdded: treeEntries.length,
+    mode,
   }
 }
