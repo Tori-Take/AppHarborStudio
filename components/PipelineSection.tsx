@@ -95,6 +95,8 @@ export function PipelineSection({ appId }: { appId: string }) {
   const [stage5Copied, setStage5Copied] = useState<'migration' | 'registry' | null>(null)
   const [installBusy, setInstallBusy] = useState(false)
   const [installResult, setInstallResult] = useState<{ ok: boolean; prUrl?: string; prNumber?: number; branch?: string; filesAdded?: number; error?: string } | null>(null)
+  const [typeCheckBusy, setTypeCheckBusy] = useState(false)
+  const [typeCheckResult, setTypeCheckResult] = useState<{ ok: boolean; errors?: Array<{ file: string; line: number; col: number; code: string; message: string }>; duration?: number; error?: string } | null>(null)
 
   const fetchStage4 = useCallback(async () => {
     setStage4Loading(true)
@@ -213,6 +215,21 @@ export function PipelineSection({ appId }: { appId: string }) {
       markError(4, (e as Error).message)
     } finally {
       setStage4ActionBusy(false)
+    }
+  }
+
+  const handleTypeCheck = async () => {
+    if (typeCheckBusy) return
+    setTypeCheckBusy(true)
+    setTypeCheckResult(null)
+    try {
+      const res = await fetch(`/api/cartridges/${encodeURIComponent(appId)}/type-check`, { method: 'POST' })
+      const j = await res.json()
+      setTypeCheckResult(j)
+    } catch (e) {
+      setTypeCheckResult({ ok: false, error: (e as Error).message })
+    } finally {
+      setTypeCheckBusy(false)
     }
   }
 
@@ -696,6 +713,53 @@ export function PipelineSection({ appId }: { appId: string }) {
                           {stage5.registryEntry}
                         </pre>
                       </details>
+                    )}
+                  </div>
+
+                  {/* 事前チェック: ローカル型チェック */}
+                  <div className="rounded border bg-card p-3 space-y-2">
+                    <div className="text-xs font-semibold flex items-center justify-between">
+                      <span>🔍 PR 作成前にローカル型チェック (推奨)</span>
+                      {typeCheckResult?.ok && (
+                        <span className="text-emerald-600 text-[11px]">✓ エラー無し ({typeCheckResult.duration}ms)</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      AppHarbor 本番ビルドと同じ TypeScript チェックをローカルで実行。
+                      ここで通れば PR 作成後の Vercel ビルドも通る確率が高い。
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleTypeCheck}
+                      disabled={typeCheckBusy}
+                      className="gap-1.5"
+                    >
+                      {typeCheckBusy
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <RefreshCw className="h-3.5 w-3.5" />}
+                      {typeCheckBusy ? '型チェック中... (10-30 秒)' : '型チェックを実行'}
+                    </Button>
+                    {typeCheckResult && !typeCheckResult.ok && (
+                      <div className="rounded border border-destructive/40 bg-destructive/5 p-2 space-y-1">
+                        <div className="text-[11px] font-semibold text-destructive">
+                          ❌ {typeCheckResult.errors?.length ?? 0} 件の型エラー
+                          {typeCheckResult.error && ` — ${typeCheckResult.error}`}
+                        </div>
+                        {typeCheckResult.errors && typeCheckResult.errors.length > 0 && (
+                          <ul className="text-[10px] font-mono space-y-0.5 max-h-48 overflow-y-auto">
+                            {typeCheckResult.errors.slice(0, 20).map((e, i) => (
+                              <li key={i} className="text-destructive">
+                                <span className="text-muted-foreground">{e.file.replace(/^.*cartridges\//, 'cartridges/')}:{e.line}:{e.col}</span>{' '}
+                                <span className="font-semibold">{e.code}</span>: {e.message}
+                              </li>
+                            ))}
+                            {typeCheckResult.errors.length > 20 && (
+                              <li className="text-muted-foreground">... 残り {typeCheckResult.errors.length - 20} 件</li>
+                            )}
+                          </ul>
+                        )}
+                      </div>
                     )}
                   </div>
 
