@@ -11,6 +11,7 @@
  */
 
 import { Client } from 'pg'
+import { createClient } from '@supabase/supabase-js'
 
 export type SetupResult = {
   ok: boolean
@@ -170,11 +171,48 @@ export async function setupCloudSupabase(): Promise<SetupResult> {
     })
   }
 
-  // 5. Exposed Schemas の案内
-  //    (API で設定変更できないため、followUp で案内)
-  followUps.push(
-    'Supabase ダッシュボード > Settings > API > Exposed schemas に "studio" を追加してください (PostgREST が studio スキーマを公開するために必要)'
-  )
+  // 5. Exposed Schemas の検証 (Supabase JS クライアントで studio スキーマに limit 0 クエリ)
+  //    新形式 API キー (sb_secret_*) でも正しく動く
+  const supabaseUrl = process.env.STUDIO_CLOUD_SUPABASE_URL!
+  const serviceRoleKey = process.env.STUDIO_CLOUD_SUPABASE_SERVICE_ROLE_KEY!
+  try {
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      db: { schema: 'studio' },
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    const { error } = await supabase.from('organizations').select('id').limit(0)
+
+    if (!error) {
+      steps.push({
+        name: 'exposed-schemas',
+        status: 'ok',
+        detail: 'studio スキーマが PostgREST で公開されています',
+      })
+    } else if (error.code === 'PGRST106' || /schema must be one of/i.test(error.message)) {
+      steps.push({
+        name: 'exposed-schemas',
+        status: 'error',
+        detail: 'studio スキーマが PostgREST に未公開',
+      })
+      followUps.push(
+        'Supabase ダッシュボード > Settings > API > Exposed schemas に "studio" を追加してください (PostgREST が studio スキーマを公開するために必要)'
+      )
+    } else {
+      // 認証エラーやその他 — 設定の問題というよりキー / 環境の問題
+      steps.push({
+        name: 'exposed-schemas',
+        status: 'warn',
+        detail: `PostgREST 確認スキップ: ${error.code ?? ''} ${error.message}`.trim(),
+      })
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    steps.push({
+      name: 'exposed-schemas',
+      status: 'warn',
+      detail: `PostgREST 疎通スキップ: ${msg}`,
+    })
+  }
 
   try { await client.end() } catch { /* ignore */ }
 

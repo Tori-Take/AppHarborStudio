@@ -51,6 +51,8 @@ type MigrationResult = {
   tableResults?: TableResult[]
   setup?: SetupResult | null
   duration?: number
+  source?: 'pglite' | 'docker'
+  target?: 'docker' | 'studio-cloud'
   error?: string
   hint?: string
   step?: string
@@ -449,6 +451,8 @@ export function PipelineSection({ appId }: { appId: string }) {
                     </div>
                   )}
 
+                  <SkipStageLink stage={4} onSkip={markCompleted} />
+
                   {/* スニペット詳細 */}
                   {stage4?.snippet && (
                     <details className="text-[11px] text-muted-foreground">
@@ -480,6 +484,11 @@ export function PipelineSection({ appId }: { appId: string }) {
                         <>
                           <div className="font-semibold">移行成功</div>
                           <div className="mt-0.5 text-muted-foreground">
+                            {result.source && (
+                              <span className="mr-2 inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono">
+                                source: {result.source}
+                              </span>
+                            )}
                             <span>ベース {result.baseSchemaApplied ? '✓' : '✗'}/{result.baseDataMigrated ? '✓' : '✗'}</span>
                             <span className="ml-2">カートリッジ {result.schemaApplied ? '✓' : '✗'}/{result.dataMigrated ? '✓' : '✗'}</span>
                             {result.duration && <span className="ml-2">({result.duration}ms)</span>}

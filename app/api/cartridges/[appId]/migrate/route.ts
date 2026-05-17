@@ -26,9 +26,15 @@ const BASE_TABLES = ['organizations', 'departments', 'profiles', 'apps'] as cons
  */
 
 type MigrateTarget = 'docker' | 'studio-cloud'
+type MigrateSource = 'pglite' | 'docker'
 
 type MigrateBody = {
   target: MigrateTarget
+  /** source 未指定時:
+   *   target=docker      → 'pglite'
+   *   target=studio-cloud → 'docker' (DOCKER_SUPABASE_DB_URL があれば) / 'pglite'
+   */
+  source?: MigrateSource
 }
 
 type TableResult = {
@@ -60,9 +66,43 @@ function extractTableNames(schemaSql: string): string[] {
   return [...names]
 }
 
-/** PGlite から全行を取り出し、Postgres の studio スキーマに INSERT (冪等) */
+/** 統一された source 読み取り interface */
+type SourceReader = {
+  kind: MigrateSource
+  selectAll: (table: string) => Promise<Record<string, unknown>[]>
+  close: () => Promise<void>
+}
+
+async function createSourceReader(source: MigrateSource): Promise<SourceReader> {
+  if (source === 'docker') {
+    const dockerUrl = process.env.DOCKER_SUPABASE_DB_URL ?? DOCKER_DEFAULT_URL
+    const client = new Client({ connectionString: dockerUrl })
+    await client.connect()
+    return {
+      kind: 'docker',
+      selectAll: async (table: string) => {
+        // Docker / クラウド側は studio スキーマに置かれている
+        const res = await client.query(`SELECT * FROM "studio"."${table}"`)
+        return res.rows as Record<string, unknown>[]
+      },
+      close: async () => { try { await client.end() } catch { /* ignore */ } },
+    }
+  }
+  // pglite
+  const pglite = await getReadyPg()
+  return {
+    kind: 'pglite',
+    selectAll: async (table: string) => {
+      const res = await pglite.query(`SELECT * FROM "${table}"`)
+      return (res.rows ?? []) as Record<string, unknown>[]
+    },
+    close: async () => { /* PGlite シングルトンなので閉じない */ },
+  }
+}
+
+/** source から全行を取り出し、Postgres の studio スキーマに INSERT (冪等) */
 async function migrateTableData(
-  pglite: Awaited<ReturnType<typeof getReadyPg>>,
+  source: SourceReader,
   pgClient: Client,
   table: string,
 ): Promise<TableResult> {
@@ -70,11 +110,10 @@ async function migrateTableData(
 
   let rows: Record<string, unknown>[]
   try {
-    const res = await pglite.query(`SELECT * FROM "${table}"`)
-    rows = (res.rows ?? []) as Record<string, unknown>[]
+    rows = await source.selectAll(table)
     result.rowsRead = rows.length
   } catch (e) {
-    result.error = `PGlite SELECT: ${e instanceof Error ? e.message : String(e)}`
+    result.error = `${source.kind} SELECT: ${e instanceof Error ? e.message : String(e)}`
     return result
   }
 
@@ -180,8 +219,45 @@ export async function POST(
   const tableResults: TableResult[] = []
   const errors: string[] = []
 
+  // source の決定 (3: 完了済み Stage の最新から自動選択)
+  //   target=docker      → 'pglite' (Stage 2 は PGlite → Docker のみ)
+  //   target=studio-cloud → body.source 指定 > Docker 接続可なら 'docker' / なければ 'pglite'
+  let source: MigrateSource = body.source ?? 'pglite'
+  if (body.target === 'studio-cloud' && !body.source) {
+    // Docker 接続可否を確認
+    const dockerUrl = process.env.DOCKER_SUPABASE_DB_URL ?? DOCKER_DEFAULT_URL
+    const probe = new Client({ connectionString: dockerUrl, connectionTimeoutMillis: 1500 })
+    try {
+      await probe.connect()
+      await probe.query('SELECT 1')
+      source = 'docker'
+      await probe.end()
+    } catch {
+      source = 'pglite'
+      try { await probe.end() } catch { /* ignore */ }
+    }
+  }
+
+  let sourceReader: SourceReader
   try {
-    const pglite = await getReadyPg()
+    sourceReader = await createSourceReader(source)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    try { await client.end() } catch { /* ignore */ }
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `source 接続失敗 (${source}): ${msg}`,
+        hint: source === 'docker'
+          ? 'Docker Supabase が起動しているか確認するか、source を指定しなおしてください'
+          : undefined,
+        step: 'source',
+      },
+      { status: 500 },
+    )
+  }
+
+  try {
 
     // 1. ベーススキーマ適用 (organizations / profiles 等)
     if (existsSync(BASE_SUPABASE_SQL)) {
@@ -194,11 +270,11 @@ export async function POST(
       }
     }
 
-    // 2. ベーステーブルデータを PGlite から移行
+    // 2. ベーステーブルデータを source から移行
     //    順序重要: organizations → departments → profiles (FK)
     if (baseSchemaApplied) {
       for (const t of BASE_TABLES) {
-        const r = await migrateTableData(pglite, client, t)
+        const r = await migrateTableData(sourceReader, client, t)
         tableResults.push(r)
         if (r.error) errors.push(`${t}: ${r.error}`)
       }
@@ -235,7 +311,7 @@ export async function POST(
     if (schemaApplied && tableNames.length > 0) {
       const before = errors.length
       for (const t of tableNames) {
-        const r = await migrateTableData(pglite, client, t)
+        const r = await migrateTableData(sourceReader, client, t)
         tableResults.push(r)
         if (r.error) errors.push(`${t}: ${r.error}`)
       }
@@ -245,6 +321,7 @@ export async function POST(
     const msg = e instanceof Error ? e.message : String(e)
     errors.push(`migrate: ${msg}`)
   } finally {
+    try { await sourceReader.close() } catch { /* ignore */ }
     try { await client.end() } catch { /* ignore */ }
   }
 
@@ -282,6 +359,8 @@ export async function POST(
         error: errors.join('\n'),
         duration,
         step: 'apply',
+        source,
+        target: body.target,
       },
       { status: 500 },
     )
@@ -296,6 +375,7 @@ export async function POST(
     tableResults,
     setup,
     duration,
+    source,
     target: body.target,
   })
 }

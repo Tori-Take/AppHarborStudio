@@ -13,6 +13,7 @@ export type StageStatus = {
 export type StageMap = Record<StageNum, StageStatus>
 
 const KEY_PREFIX = 'stage-status:'
+const CHANGE_EVENT = 'stage-status-changed'
 
 function emptyMap(): StageMap {
   const empty = (): StageStatus => ({ completed: false, completedAt: null, lastError: null })
@@ -40,6 +41,9 @@ function readStorage(appId: string): StageMap {
 function writeStorage(appId: string, map: StageMap) {
   if (typeof window === 'undefined') return
   localStorage.setItem(`${KEY_PREFIX}${appId}`, JSON.stringify(map))
+  // 同一タブ内の他のフック利用者に通知
+  // (storage イベントは別タブにしか飛ばないので CustomEvent を使う)
+  window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: { appId } }))
 }
 
 export function useStageStatus(appId: string) {
@@ -47,6 +51,16 @@ export function useStageStatus(appId: string) {
 
   useEffect(() => {
     setStages(readStorage(appId))
+
+    // 別のコンポーネントが書き換えた時に同期
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ appId: string }>).detail
+      if (detail?.appId === appId) {
+        setStages(readStorage(appId))
+      }
+    }
+    window.addEventListener(CHANGE_EVENT, handler)
+    return () => window.removeEventListener(CHANGE_EVENT, handler)
   }, [appId])
 
   const markCompleted = useCallback((stage: StageNum) => {
