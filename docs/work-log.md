@@ -199,6 +199,81 @@ STUDIO_CLOUD_SUPABASE_DB_URL=postgresql://postgres.[ref]:[password]@aws-0-[regio
 
 ---
 
+## 2026-05-17 (5): Stage 5 完全自動化 (Web Studio → AppHarbor 本番)
+
+### 達成: 「Web Studio から 2 クリックで AppHarbor 本番にカートリッジ install PR」
+
+本セッションで、vehicle-equipment カートリッジを 5 段階パイプライン
+すべて通して本番 AppHarbor (Vercel + 本番 Supabase) に投入できた。
+ローカル開発 → 本番ユーザーがインストール可能まで完走。
+
+### 主な実装 (Studio 側)
+
+1. **N/A stage 視覚化 + DB ソース可用性分離**
+   - 環境上スキップ確定 stage は ✓ + グレーアウト「ローカル開発で通過」
+   - unavailableSources で「pipeline 完了」と「runtime 使用可能」を分離
+
+2. **Stage 進捗の自動検出 (`/api/cartridges/[appId]/stage-status`)**
+   - 初回訪問で localStorage が空なら API から実態を取得
+   - Vercel/local/Docker 接続可否で各 stage を判定
+   - Vercel では naStages=[1,2,3]、unavailableSources=[pglite,docker]
+
+3. **DB ソースの env 別デフォルト**
+   - Vercel: studio-cloud がデフォルト、PGlite と Docker はグレーアウト
+   - getDbSourceFor も Vercel 時は studio-cloud にフォールバック
+
+4. **「AppHarbor に PR を作成」ボタン (案 A 実装)**
+   - `lib/github/cartridge-pr.ts` で GitHub API を raw fetch で叩く
+   - ソースリポの blob 全取得 → ターゲットに blob 作成 → tree/commit/ref/PR
+   - GITHUB_TOKEN (既存) で動作
+   - PR 作成後、URL を UI に表示
+
+5. **registry モード対応 (案 B 実装)**
+   - ターゲットリポに `cartridges-registry.yaml` があれば、
+     ファイルコピーの代わりに registry に 1 行追加するだけの軽量 PR
+   - `targetHasRegistry()` で自動判定 → files / registry モード切替
+   - 結果に mode フィールドを返す
+
+6. **ローカル型チェック機能 (`/api/cartridges/[appId]/type-check`)**
+   - `npx tsc --noEmit -p <一時 tsconfig>` を spawn
+   - 対象カートリッジの routes/ だけ include
+   - エラーを parse して file:line:col + コード + メッセージで表示
+   - Stage 5 のメインアクション前に推奨
+
+7. **テンプレ強化 (`templates/CLAUDE.cartridge.md`)**
+   - 「実装フェーズ最初の必須ステップ」として `routes/_types.ts` を昇格
+   - DB 列 → TypeScript 型マッピング表
+   - 「忘れがちな列」パターン集 (sort_order / is_active / parent_id 等)
+   - 過去事例の再現説明
+
+### AppHarbor 側変更 (案 B)
+
+- **`scripts/fetch-cartridges.js`** 新規 — registry を読んで GitHub から clone
+- **`cartridges-registry.yaml`** 新規 — 既存 7 カートリッジを mode: local 登録
+- **`scripts/sync-cartridges.ts`** 更新 — `cartridges/` と `cartridges/_installed/` 両対応
+- **`lib/cartridge/installer.ts`** 更新 — deployCartridgeRoutes に optional sourceDir
+- **`.gitignore`** 更新 — `cartridges/_installed/`
+- **`package.json`** 更新 — prebuild に fetch-cartridges 追加
+
+### 実プロセス記録 (vehicle-equipment の本番投入)
+
+| 試行 | 結果 | 原因 |
+|---|---|---|
+| PR #29 (files モード) | ❌ 型エラー (Crew is_active 欠落) | DailyBoard で is_active なし |
+| PR #30 (修正後) | ❌ 型エラー (Asset sort_order 欠落) | 4 ファイルで Asset 別定義 |
+| PR #31 (_types.ts 集約) | ❌ 型エラー (Assignment date 欠落) | 楽観的更新で date 抜け |
+| PR #32 (date 追加 + Category 型統合) | ✅ Ready | 完全グリーン |
+
+教訓 → 「ローカル型チェック」機能 + テンプレ強化で再発防止。
+
+### 残課題
+
+- AppHarbor 側 registry モードでの動作確認 (次の install PR で初検証予定)
+- GitHub Action による `supabase db push --linked` 自動化 (現状は手動)
+- 「Studio → AppHarbor リポ→ 各組織への install」をワンボタン化 (今は組織で有効化が手動)
+
+---
+
 ## 2026-05-17 (4): Stage 5 (AppHarbor 本番統合) 実装
 
 ### 実装したこと
