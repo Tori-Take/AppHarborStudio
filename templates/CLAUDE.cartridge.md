@@ -314,12 +314,55 @@ DB が必要な場合、主要テーブルのカラム構成を提案する:
 .
 ├── manifest.json            ← カートリッジのメタデータ・権限定義
 ├── routes/                  ← Next.js 配信されるページ
+│   ├── _types.ts            ← ⚠ 共有型 (テーブル行の型等) — ここに集約
 │   ├── page.tsx             ← トップページ
 │   ├── components/          ← コンポーネント
 │   └── server/              ← Server Actions ('use server')
 └── db/
     └── schema.sql           ← DB テーブル定義（PGlite/Supabase 両対応）
 ```
+
+## 🚨 型定義のルール (本番ビルド失敗の最頻出原因)
+
+**ルール:** 複数ファイルで使う型 (DB テーブル行の型等) は **`routes/_types.ts` に 1 箇所だけ定義** し、各ファイルから import すること。
+
+### NG パターン (本番ビルドが落ちる)
+
+```ts
+// ❌ DailyBoard.tsx
+interface Crew { id: string; name: string }
+
+// ❌ SettingsModal.tsx (同じ Crew だが定義違い)
+interface Crew { id: string; name: string; is_active: boolean }
+
+// → DailyBoard が SettingsModal に crews を渡すと
+//   "Two different types with this name exist, but they are unrelated" エラー
+```
+
+### OK パターン
+
+```ts
+// ✅ routes/_types.ts (単一の真実)
+export interface Crew {
+  id:           string
+  name:         string
+  is_active:    boolean
+  profile_id:   string | null
+}
+
+// ✅ DailyBoard.tsx / SettingsModal.tsx / 他全ファイル
+import type { Crew } from '../_types'
+```
+
+### 型定義のチェックリスト
+
+各 DB テーブルに対して `_types.ts` に対応する型を定義し、以下を含めること:
+- [ ] **schema.sql の全列を漏れなく宣言** (NULL 許容なら `| null`)
+- [ ] **boolean / number 等の必須列** (例: `is_active: boolean`) を抜かさない
+- [ ] **timestamp 列** は `string` (Supabase からは ISO 8601 文字列で返る)
+- [ ] **UUID 列** は `string`
+
+ローカル Studio (`ignoreBuildErrors: true`) では通っても、本番 AppHarbor ビルドはこのチェックが厳格。**Stage 5 で AppHarbor に送る時に初めて落ちる**ので、最初から守ること。
 
 ## ⛔ 触ってはいけないファイル（カートリッジ外）
 
