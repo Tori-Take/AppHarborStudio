@@ -308,6 +308,96 @@ DB が必要な場合、主要テーブルのカラム構成を提案する:
 
 ---
 
+## 🚨🚨🚨 実装フェーズ最初の必須ステップ: `routes/_types.ts` を最初に作る
+
+**理由:** カートリッジ複数ファイル間で型を共有する場合、各ファイルに `interface Foo {...}` を別々に書くと、定義が微妙に違って TypeScript エラーになる。**ローカル Studio は通っても本番 AppHarbor で必ず落ちる**。過去にこれで何度もリリースが詰まった。
+
+### 手順 (これを守れば本番ビルド失敗ゼロ)
+
+#### ステップ 1: `db/schema.sql` を先に書く
+
+テーブル定義を完成させてから型を決める。スキーマがソースオブトゥルース。
+
+#### ステップ 2: `routes/_types.ts` を作る (コンポーネント・Server Action より前)
+
+`db/schema.sql` の **各テーブルに対応する型** を 1 ファイルに集約。
+
+```ts
+// routes/_types.ts (例: 在庫管理カートリッジ)
+export type ItemType = 'product' | 'material' | 'tool'
+
+export interface Item {
+  id:               string
+  type:             ItemType
+  name:             string
+  sku:              string
+  category_id:      string | null
+  is_active:        boolean         // ← schema の boolean 列は必ず
+  sort_order:       number          // ← schema の int 列は必ず
+  created_at:       string          // ← timestamptz は string (ISO 8601)
+}
+
+export interface Category {
+  id:          string
+  name:        string
+  parent_id:   string | null
+  sort_order:  number
+}
+```
+
+#### ステップ 3: 全ての routes/* ファイルで import
+
+```ts
+// routes/components/ItemCard.tsx
+import type { Item } from '../_types'
+
+// routes/master/items/ItemManager.tsx (深いパス)
+import type { Item, Category } from '../../_types'
+
+// ✅ ファイル内で interface Item {...} を再宣言しないこと!
+```
+
+### 型定義チェックリスト (schema.sql と照合)
+
+各テーブルの全列について `_types.ts` で:
+- [ ] **NOT NULL 必須列** (例: `is_active boolean not null`) → 型でも必須 (`is_active: boolean`)
+- [ ] **NULL 許容列** (例: `parent_id uuid references...`) → ユニオン (`parent_id: string | null`)
+- [ ] **timestamp 列** (timestamptz, date) → `string` (Supabase は ISO 文字列で返す)
+- [ ] **UUID 列** → `string`
+- [ ] **boolean 列** → `boolean`
+- [ ] **int / numeric 列** → `number`
+- [ ] **check 制約 / enum** → ユニオン文字列型 (`type Foo = 'a' | 'b' | 'c'`)
+
+### ⛔ アンチパターン (本番で必ず落ちる)
+
+```ts
+// ❌ ファイル A: routes/components/Board.tsx
+interface Item { id: string; name: string }
+
+// ❌ ファイル B: routes/components/Modal.tsx
+interface Item { id: string; name: string; is_active: boolean }
+
+// → Board が <Modal items={items} /> を渡すと
+//   "Two different types with this name exist, but they are unrelated"
+//   Property 'is_active' is missing in type 'Item' but required in type 'Item'
+```
+
+ローカル Studio (`ignoreBuildErrors: true`) は通すが、**Stage 5 で AppHarbor に install PR を作った時に**初めて Vercel ビルドで落ちる。デプロイ後の発覚は手戻りが大きい。
+
+### よくある「型に列を入れ忘れる」パターン
+
+| 状況 | 抜けがちな列 |
+|---|---|
+| 並び替え機能あり | `sort_order: number` |
+| 論理削除/有効無効 | `is_active: boolean` / `deleted_at: string \| null` |
+| 親子関係/ツリー構造 | `parent_id: string \| null` |
+| 監査ログ | `created_at: string` / `updated_at: string` |
+| ユーザー紐付け | `user_id: string` / `profile_id: string \| null` |
+
+「ある画面では使ってないから省略」と判断すると本番で詰む。**schema.sql に書いた列は全て型に入れる**こと。
+
+---
+
 ## ファイル構造
 
 ```
@@ -322,47 +412,7 @@ DB が必要な場合、主要テーブルのカラム構成を提案する:
     └── schema.sql           ← DB テーブル定義（PGlite/Supabase 両対応）
 ```
 
-## 🚨 型定義のルール (本番ビルド失敗の最頻出原因)
-
-**ルール:** 複数ファイルで使う型 (DB テーブル行の型等) は **`routes/_types.ts` に 1 箇所だけ定義** し、各ファイルから import すること。
-
-### NG パターン (本番ビルドが落ちる)
-
-```ts
-// ❌ DailyBoard.tsx
-interface Crew { id: string; name: string }
-
-// ❌ SettingsModal.tsx (同じ Crew だが定義違い)
-interface Crew { id: string; name: string; is_active: boolean }
-
-// → DailyBoard が SettingsModal に crews を渡すと
-//   "Two different types with this name exist, but they are unrelated" エラー
-```
-
-### OK パターン
-
-```ts
-// ✅ routes/_types.ts (単一の真実)
-export interface Crew {
-  id:           string
-  name:         string
-  is_active:    boolean
-  profile_id:   string | null
-}
-
-// ✅ DailyBoard.tsx / SettingsModal.tsx / 他全ファイル
-import type { Crew } from '../_types'
-```
-
-### 型定義のチェックリスト
-
-各 DB テーブルに対して `_types.ts` に対応する型を定義し、以下を含めること:
-- [ ] **schema.sql の全列を漏れなく宣言** (NULL 許容なら `| null`)
-- [ ] **boolean / number 等の必須列** (例: `is_active: boolean`) を抜かさない
-- [ ] **timestamp 列** は `string` (Supabase からは ISO 8601 文字列で返る)
-- [ ] **UUID 列** は `string`
-
-ローカル Studio (`ignoreBuildErrors: true`) では通っても、本番 AppHarbor ビルドはこのチェックが厳格。**Stage 5 で AppHarbor に送る時に初めて落ちる**ので、最初から守ること。
+> 型定義のルール詳細は前述の「実装フェーズ最初の必須ステップ: `routes/_types.ts`」を参照。
 
 ## ⛔ 触ってはいけないファイル（カートリッジ外）
 
