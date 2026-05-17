@@ -44,10 +44,10 @@ export async function GET(
   const auto: StageAutoStatus = { 1: true, 2: false, 3: false, 4: false, 5: false }
   const naStages: StageNum[] = []
 
-  // Stage 2: Docker Supabase 接続テスト
-  //   Vercel 上では Docker は構造的に届かないので N/A 扱い (試行もスキップ)
+  // Stage 1 (PGlite): Vercel 上では in-memory + 揮発のため運用上 N/A
+  // Stage 2 (Docker): Vercel 上では localhost に届かないため N/A
   if (isVercel) {
-    naStages.push(2)
+    naStages.push(1, 2)
   } else {
     const dockerUrl = process.env.DOCKER_SUPABASE_DB_URL ?? DOCKER_DEFAULT_URL
     auto[2] = await canConnect(dockerUrl)

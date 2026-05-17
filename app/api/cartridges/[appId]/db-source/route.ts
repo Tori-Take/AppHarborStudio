@@ -47,7 +47,14 @@ export async function GET(
   const { appId } = await params
   const id = decodeURIComponent(appId)
   const store = readStore()
-  return NextResponse.json({ source: store[id] ?? 'pglite' })
+
+  // 環境別デフォルト:
+  //   Vercel: PGlite / Docker は N/A なので studio-cloud がデフォルト
+  //   ローカル: 従来通り pglite がデフォルト
+  const isVercel = process.env.VERCEL === '1' || !!process.env.VERCEL_ENV
+  const defaultSource: DbSource = isVercel ? 'studio-cloud' : 'pglite'
+
+  return NextResponse.json({ source: store[id] ?? defaultSource })
 }
 
 export async function POST(
