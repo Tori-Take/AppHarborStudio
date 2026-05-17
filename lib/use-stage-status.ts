@@ -76,20 +76,27 @@ export function useStageStatus(appId: string) {
         }
         setUnavailableSources(us)
 
-        if (raw === null && j?.auto) {
-          // 初回: auto 値で localStorage を初期化
-          const next = emptyMap()
-          const now = new Date().toISOString()
-          for (const s of [1, 2, 3, 4, 5] as StageNum[]) {
-            if (j.auto[String(s)]) {
-              next[s] = { completed: true, completedAt: now, lastError: null }
-            }
+        // localStorage の有無に関わらず、N/A stage は常に completed として扱う
+        // (環境上スキップ確定 = 「ローカル開発で通過」表示)
+        const current = raw === null ? emptyMap() : readStorage(appId)
+        const now = new Date().toISOString()
+        let modified = raw === null
+
+        for (const s of [1, 2, 3, 4, 5] as StageNum[]) {
+          // N/A stage → 常に完了
+          if (na.has(s) && !current[s].completed) {
+            current[s] = { completed: true, completedAt: now, lastError: null }
+            modified = true
           }
-          writeStorage(appId, next)
-          setStages(next)
-        } else {
-          setStages(readStorage(appId))
+          // 非 N/A + 初回 + auto 完了 → 完了
+          if (raw === null && !na.has(s) && j?.auto?.[String(s)] && !current[s].completed) {
+            current[s] = { completed: true, completedAt: now, lastError: null }
+            modified = true
+          }
         }
+
+        if (modified) writeStorage(appId, current)
+        setStages(current)
       })
       .catch(() => setStages(readStorage(appId)))
 
