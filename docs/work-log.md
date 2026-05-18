@@ -2,6 +2,77 @@
 
 ---
 
+## 2026-05-18: インフォ送信カートリッジ完遂 + Studio DX 5 改修
+
+### 実装したこと
+
+1. **`notify()` SDK の 3 リポ実装**
+   - `appharbor-sdk` リポに `notify(input: NotifyInput): NotifyResult` 契約を追加 (v0.1.2 tag)
+   - `AppHarbor 本体 lib/sdk/notify.ts` に本番実装 (`announcements` テーブルへ INSERT)
+   - `AppHarborStudio lib/sdk-mock/index.ts` に mock 実装
+   - 本番 Supabase migration `20260518104143_announcements_cartridge_source.sql` で `source_app_id` / `link` カラム追加
+
+2. **`cart-info-sender` カートリッジ新設**
+   - 組織メンバーに通知を送信する単機能アプリ
+   - GitHub: <https://github.com/Tori-Take/cart-info-sender>
+   - 送信先: 組織全員 / 部署 / 個人
+   - Stage 1 (Studio localhost) と Stage 5 (本番 Vercel) で動作実証
+
+3. **Stage 1 → Stage 5 一気通貫の踏破** (ブラウザ検証)
+   - cart-info-sender を `appharbor.vercel.app/org/tps/apps/info-sender` で動作確認
+   - 通知が `/org/tps/dashboard` に表示されることを確認
+   - 過程で踏んだ 6 つの friction point を `cartridge-template/docs/release-checklist.md` に文書化
+
+4. **本番側のバグ 2 件を修正 + push**
+   - cart 側: 履歴クエリが Studio mock の `notifications` テーブルを参照していた → `announcements` に修正
+   - 本体側: 自分が送ったお知らせが自分のベルにも届く → `.neq('created_by', user.id)` 追加 (3 ファイル)
+   - 本体 commit: `c47c3d1` + `6fd6581`
+
+5. **Studio 側の構造改修 5 件 (commit `f41e544`)**
+   - **P1**: mock schema を本番と揃える。`notifications` → `announcements` にリネーム + カラム合わせ。`department_ids[]` / `user_ids[]` で scope を表現
+   - **P2**: `cartridge-lint.ts` の `classify()` に `@appharbor/sdk` 検出を追加。**Vercel build が必ず失敗する import を commit 前に潰す**
+   - **P3**: `announcements-server.ts` の `listAnnouncementsForCurrentUser` に `created_by is distinct from $1` を追加。Studio mock でも本番と同じ「自分発除外」挙動
+   - **P4**: `/cartridge/[appId]/release-check` ページ新設。既存 `/api/cartridges/[appId]/stage5-prepare` に lint check + git-sync check を追加。リリース直前に 6 項目を ✓/✗ で確認できる
+   - **P5**: Inspector の左サイドバー先頭に「📢 通知 (notify / インフォ)」ピン留めセクションを追加
+
+### why (背景・経緯)
+
+ユーザー (toritake) の要望:
+1. 「AppHarbor SDK にインフォ (通知) 機能はあるか？」 → 「なかった」
+2. 「アプリ A が AppHarbor のインフォに通知を出す機能を作って」 → SDK + 本体 + cartridge をフル実装
+3. 「Stage 5 まで本番で動かして」 → Vercel deploy + Supabase migration まで通した
+4. 「実装中にどんな摩擦があった？」 → 6 つの friction point を率直に報告
+5. 「Studio で構造改修できることを重要順に教えて」 → P1〜P5 を提案
+6. 「全部やって」 → 1 セッションで全部完了
+
+### 学んだこと
+
+- **mock-prod schema 不一致は読み取り側の地獄を生む**: `notify()` を SDK で抽象化しても、history などの読み取りクエリを書く時にコピペが効かない
+- **`@/sdk` と `@appharbor/sdk` の差**: 本体に webpack alias がない以上、`@/sdk` 一択
+- **Platform Admin が自分の組織を扱う流れが未整備**: profile + user_metadata + JWT 再発行が必要
+- **404 の原因が多すぎる**: 5 つの候補 (registry / apps / enable / membership / orgSlug) を 1 個ずつ潰すコストが高い
+- **AI 向けドキュメント (CLAUDE.md / prompts.md / cookbook.md) の完成度は高いが、`release-checklist.md` が欠けていた** → 今回追加
+
+### 関連 commit / push 状態 (すべて push 済み)
+
+| リポジトリ | 最終 commit |
+|---|---|
+| `appharbor-sdk` | `db1084b` feat: add notify() contract |
+| `cart-info-sender` | `6507558` fix: read from announcements |
+| `AppHarbor` | `6fd6581` fix(dashboard): narrow user |
+| `cartridge-template` | `f8904e7` docs: add Stage 1 → 5 release checklist |
+| `AppHarborStudio` (本ブランチ) | `f41e544` feat(studio): align mock schema |
+
+### 次に進めたい候補
+
+詳細は `docs/next-session.md` 参照。要点だけ:
+- Stage 2 / 3 / 4 のブラウザ検証 (今回は Stage 1 と 5 だけ)
+- cartridge-template の例示コード `@appharbor/sdk` → `@/sdk` 統一
+- Vercel prebuild の apps テーブル自動 upsert
+- `platform-preview` 組織で全カートリッジ自動有効化
+
+---
+
 ## 2026-05-17: 5 段階リリースパイプライン + DB ソース切替
 
 ### 実装したこと

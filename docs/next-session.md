@@ -1,112 +1,155 @@
-# 次セッション (2026-05-18 以降) 向けメモ
+# 次セッション (2026-05-19 以降) 向けメモ
 
-## 前セッションの到達点 (2026-05-17)
-
-**Web Studio → AppHarbor 本番**を 2 クリック自動化に成功。
-vehicle-equipment が `appharbor.vercel.app` の「インストール可能アプリ」
-に登場 → install → 組織で有効化 → 起動まで実証。
-
-詳細は `docs/work-log.md` の「2026-05-17 (5)」を参照。
+> 前回終了時点: 2026-05-18 夜
+> 担当ブランチ: `claude/angry-almeida-46c8a1` (push 済み)
 
 ---
 
-## 次セッションで優先したいタスク
+## 🎯 本日 (2026-05-18) の到達点
 
-### 🚀 最優先: Plan B (registry mode) の本番検証
+**新機能「インフォ送信」を Stage 1 → Stage 5 まで完遂**。
+途中で見つけた 6 つの friction point を 5 つの構造改修で潰した。
 
-前セッションで実装したが**実際の registry mode PR は未作成**。
+### 作ったもの (5 リポジトリすべて main / 本ブランチに push 済み)
 
-**やること:**
-1. **新規テスト用カートリッジ**を 1 つ作る (シンプルな TODO アプリ等で OK)
-   - Studio の「新規カートリッジ」UI から
-   - 必ず `routes/_types.ts` を最初に作るルール (テンプレ準拠)
-2. Stage 1-3 をローカルで通す
-3. **GitHub に push** (`gh repo create test-cart --private`)
-4. Studio の Stage 4 で「Registry に追加」
-5. Stage 5 で「**🔍 型チェックを実行**」→ クリーン確認
-6. Stage 5 で「**AppHarbor に PR を作成**」をクリック
-7. **期待**: PR が **2 ファイル (cartridges-registry.yaml 1 行追加 + migration SQL)** で来る
-   - もし 30+ ファイルなら Plan B が動いてない → デバッグ
+| リポジトリ | 役割 | 最終 commit |
+|---|---|---|
+| [Tori-Take/appharbor-sdk](https://github.com/Tori-Take/appharbor-sdk) | `notify()` 契約を追加 (v0.1.2 tag) | `db1084b` |
+| [Tori-Take/cart-info-sender](https://github.com/Tori-Take/cart-info-sender) | カートリッジ実装 | `6507558` fix: read from announcements |
+| [Tori-Take/AppHarbor](https://github.com/Tori-Take/AppHarbor) | 本体に `notify()` 実装 + 自分発除外フィルタ | `6fd6581` fix(dashboard): narrow user |
+| [Tori-Take/cartridge-template](https://github.com/Tori-Take/cartridge-template) | Stage 1→5 release-checklist.md 追加 | `f8904e7` docs: release-checklist |
+| [Tori-Take/AppHarborStudio](https://github.com/Tori-Take/AppHarborStudio/tree/claude/angry-almeida-46c8a1) | mock schema 整合 + 4 つの DX 改善 (本 worktree) | `f41e544` feat(studio): align mock schema |
 
-**ローカル AppHarbor で確認するポイント:**
-- `git pull` 後 `npm run cartridge:fetch` (新スクリプト) で clone される
-- `cartridges/_installed/test-cart/` に出現
-- `npm run cartridge:sync` で `app/org/[slug]/apps/test-cart/` にマウント
-- 起動
-
-### 🤖 次優先: GitHub Action で `supabase db push --linked` 自動化
-
-現状 PR マージ後に手動で `npx supabase db push --linked` が必要。
-
-**設計:**
-- AppHarbor リポに `.github/workflows/db-push.yml` 追加
-- トリガー: `push: branches: [main]` + `paths: ['supabase/migrations/**']`
-- ステップ:
-  1. `supabase/setup-cli@v1`
-  2. `supabase login --token ${{ secrets.SUPABASE_ACCESS_TOKEN }}`
-  3. `supabase link --project-ref vomriakqlonnqrsbmkfk`
-  4. `supabase db push --linked`
-- 必要シークレット: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`
-  (Tori-Take の Supabase ダッシュボードから取得)
-
-### 🎁 サブ: その他改善案
-
-- **Studio Stage 5 の進捗ログ表示**
-  - 「AppHarbor に PR を作成」が現状ボタン押して数秒待つだけ。途中経過 (clone 中 / blob 作成中 / PR 作成中) を見せると分かりやすい
-- **Studio の型チェックの厳密化**
-  - 現状は `tsc --noEmit` だけ。AppHarbor 本体の `tsconfig` と完全一致してない可能性
-  - 「ローカル check 通ったのに本番落ちる」が再発する余地
-  - 案: ローカルチェックで AppHarbor 本体の `tsconfig.json` を取得してそれで検証
-- **AppHarbor リポでの自動 install 検証 CI**
-  - PR がマージされる前に、AppHarbor の CI でカートリッジを実際に install + build してみる workflow
-  - 失敗したら PR にコメント → 修正後に再 push
-- **新規カートリッジ作成テンプレに `_types.ts` の雛形を含める**
-  - `templates/CLAUDE.cartridge.md` でルール明文化済みだが、実テンプレファイル (`templates/*` の他に scaffold する側) には `_types.ts` の雛形まで作っておくと AI が忘れにくい
+### 本番で動作確認済み
+- 🚀 `https://appharbor.vercel.app/org/tps/apps/info-sender` — 通知送信フォーム動作
+- 🔔 `/org/tps/dashboard` — 他ユーザーが送った通知が表示、自分発は除外
 
 ---
 
-## 次セッション開始用プロンプト
+## 🔧 Studio 側で行った 5 つの DX 改修 (`f41e544`)
 
-以下を新セッション開始時に貼り付ければスムーズに継続できる:
+| # | 修正 | ファイル |
+|---|---|---|
+| P1 | mock schema を本番と揃える (`notifications` → `announcements`) | `lib/sdk-mock/db-base.sql` + `index.ts` + `announcements-server.ts` + `types.ts` |
+| P2 | cartridge-lint で `@appharbor/sdk` import を error 検出 | `lib/cartridge-lint.ts` |
+| P3 | ベル一覧で `created_by != self` 除外 | `lib/sdk-mock/announcements-server.ts` |
+| P4 | `/cartridge/[appId]/release-check` 専用ページ + API 拡張 | `app/cartridge/[appId]/release-check/` + `app/api/cartridges/[appId]/stage5-prepare/route.ts` |
+| P5 | Inspector に通知系テーブルをピン留め | `app/inspector/page.tsx` |
 
+---
+
+## ⏭ 次セッションで触る候補
+
+### 優先度: 中
+
+**1. cart-info-sender を Studio mock の新 schema 対応に合わせて検証**
+- 今回 Studio mock を `announcements` テーブルに切り替えた
+- cart-info-sender の routes/page.tsx は本番 schema で書かれている (`department_ids[]` / `user_ids[]`)
+- Studio mock も同じ shape にしたので、**Stage 1 と Stage 5 が同じコードで完全動作**するはず
+- 改めて Stage 1 から動作確認して「mock-prod の Schema 一致 = カートリッジ作者の負担減」を実証する
+
+**2. Stage 2 / Stage 3 / Stage 4 もブラウザ検証 (未着手)**
+- 今回は Stage 1 と Stage 5 だけ。中間 stage は飛ばした
+- Stage 2 (Docker Supabase): 既存ボタン `POST /api/cartridges/[appId]/migrate` を info-sender でも動かす
+- Stage 3 (Studio Cloud Supabase): クラウド側に announcements テーブルがあるか確認
+- Stage 4 (Vercel Studio): `app-harbor-studio.vercel.app` で動作確認 (registry mode で fetch)
+
+**3. release-check ページの追加項目**
+- 現状 6 項目チェック。追加候補:
+  - apps テーブル本番行の有無 (要 production Supabase クエリ)
+  - 対象組織での「有効化」状態
+  - announcements migration が本番に当たっているか
+- これらは「読み取り API」なので本番 Supabase 接続をどう Studio に組み込むかが検討事項
+
+### 優先度: 低 (やっておきたいが緊急性なし)
+
+**4. cartridge-template の例示コードを `@appharbor/sdk` → `@/sdk` に統一**
+- 現状の template は `@appharbor/sdk` を例示
+- Studio の lint で error にしたので、template も合わせる
+- ファイル: `cartridge-template/CLAUDE.md` / `routes/page.tsx` 等
+- ※ 気にしないなら Studio の lint だけで吸収できる (template は学習用と割り切り)
+
+**5. apps テーブル upsert の Vercel prebuild 自動化**
+- 現状: 新カートリッジ install 時に手動 SQL
+- 理想: AppHarbor 本体の prebuild hook で manifest から自動 upsert
+- 検討: `scripts/sync-apps.ts` を cartridges 対応に拡張？
+
+**6. Platform Admin が自分のカートリッジを `platform-preview` で直接テスト可能に**
+- 現状: `/platform/apps/<id>` で「有効化」ボタンを各組織ごとに押す必要あり
+- 理想: `platform-preview` 組織は自動で全カートリッジが有効化されている
+- ファイル: `lib/auth/requireOrgAccess.ts` / `core/apps/getAppRole.ts` 周り
+
+---
+
+## 🧠 今回得たスキル / 学び
+
+**カートリッジ作者目線の知見** (`cartridge-template/docs/release-checklist.md` に文書化済み):
+
+1. **import エイリアスは `@/sdk` 一択** — `@appharbor/sdk` は Vercel build で必ず失敗する
+2. **`apps` テーブル登録は手動** — registry に追加するだけでは本番は動かない (SQL upsert 必須)
+3. **`user_metadata.orgSlug` が必須** — Platform Admin であっても、`/org/<slug>/...` にアクセスするにはこれが必要 + JWT 再発行
+4. **Studio mock と本番のテーブル名は揃えるべき** — `notifications` ≠ `announcements` は地獄を生む (今回 P1 で解消)
+5. **自分が送った通知は自分に届けない** — broadcast UX の常識
+6. **5 段階リリースの 1 と 5 だけ通せば実用上 OK** — 2/3/4 は中間段階で、本番投入前にスキップ可能
+
+**Studio 改修の知見**:
+- カートリッジから「読み取り」する場合、SDK abstraction だけでは不十分 → mock schema を本番と揃える方が筋がいい
+- `cartridge-lint.ts` は既存の枠組みが優秀 — 規則追加は `classify()` 一箇所
+- Stage5-prepare の API はすでにあるので、リリースチェックは「既存 API + 専用 UI」で薄く作れる
+- Inspector のピン留めは fixed-prefix のテーブルを最上部に出すだけで体感が大きく変わる
+
+---
+
+## 🔄 別セッションで再開する手順
+
+別マシン / 別セッションで続きをやる場合:
+
+```bash
+# 1. リポジトリを clone (持ってない場合)
+git clone https://github.com/Tori-Take/AppHarborStudio.git
+cd AppHarborStudio
+
+# 2. 本ブランチに切替 (worktree でも通常 checkout でも OK)
+git fetch origin claude/angry-almeida-46c8a1
+git checkout claude/angry-almeida-46c8a1
+
+# 3. 依存セットアップ
+npm install
+
+# 4. dev サーバー起動
+npm run dev
+# → http://localhost:3200 で Studio が立つ
+
+# 5. 動作確認
+# - http://localhost:3200/org/studio-sandbox/apps/info-sender (Stage 1: 通知送信フォーム)
+# - http://localhost:3200/cartridge/info-sender/release-check (P4: リリース準備チェック)
+# - http://localhost:3200/inspector (P5: 通知ピン留め)
 ```
-前セッション (2026-05-17) で AppHarbor Studio の Stage 5 (本番統合) が完成しました。
-Web Studio → AppHarbor 本番への install を 2 クリック自動化済み。
-vehicle-equipment が `appharbor.vercel.app` で実稼働しています。
 
-詳細は `docs/work-log.md` の「2026-05-17 (5)」と `docs/next-session.md` を読んでください。
+**本番側の確認**:
+- Vercel: `appharbor.vercel.app` は最新が live (commit `6fd6581`)
+- 本番 Supabase: `announcements.source_app_id` カラム、`apps` テーブルに `info-sender` 行あり
 
-今日やりたいこと: **Plan B (registry mode) の本番検証** です。
-
-手順案:
-1. 新規テスト用カートリッジ (シンプルな TODO アプリ程度) を Studio で作る
-   - `templates/CLAUDE.cartridge.md` の最新ルールに従って `routes/_types.ts` から始める
-2. Stage 1-4 を順に通す (GitHub Private リポ作成 → Studio registry 登録)
-3. Stage 5 で「🔍 型チェックを実行」が緑になることを確認
-4. Stage 5 で「AppHarbor に PR を作成」→ **PR が 2 ファイル (registry 1 行 + migration 1) で来るか確認**
-5. registry mode で来ていれば、ローカル AppHarbor で:
-   - `git pull` → `npm run cartridge:fetch` → `cartridges/_installed/<id>/` 確認
-   - `npm run dev` で起動確認
-6. 問題なければ PR マージ → 本番 Vercel ビルド → AppHarbor の「インストール可能アプリ」に出現確認
-
-カートリッジ名・用途は何にしますか?
-```
+**注意点**:
+- `take@torilab.biz` ユーザーには `user_metadata.orgSlug = 'tps'` 設定済み + tps の profiles 行あり
+- 別ユーザーで Stage 5 検証したい場合は profile + user_metadata の同様セットアップが必要
 
 ---
 
-## 把握しておく主要パス
+## 📋 ToDo: 次セッション開始直後にやる準備
 
-- **AppHarborStudio**: `C:\Users\torit\Desktop\Projects\AppHarborStudio` (Tori-Take/AppHarborStudio)
-- **AppHarbor 本体**: `C:\Users\torit\Desktop\Projects\AppHarbor` (Tori-Take/appharbor)
-- **テスト用カートリッジを作る場所**: `C:\Users\torit\Desktop\Projects\cart-<id>` (sibling フォルダ)
-- **本番 Vercel**: `https://appharbor.vercel.app` / `https://app-harbor-studio.vercel.app`
-- **本番 Supabase**: GridTask (Studio Cloud, studio schema) / AppHarbor (本番, public schema)
+- [ ] `git log --oneline -20` で最新の commit を確認
+- [ ] `npm run dev` で Studio 起動 → エラーなく立ち上がるか確認
+- [ ] `http://localhost:3200/cartridge/info-sender/release-check` を開いて 6 項目の状態を確認
+- [ ] `appharbor.vercel.app/org/tps/apps/info-sender` でログインして本番動作を確認 (regression check)
+- [ ] このメモを読み終わったら、上記「優先度: 中」から進めたい項目を選ぶ
 
 ---
 
-## 既知のリスク・注意点
+## 📚 参照ドキュメント
 
-- **本番 Supabase は `db push --linked` で直接更新される**。実ユーザーデータがあるので壊さないこと。
-- **GITHUB_TOKEN** は `repo` フルアクセス権限のため、漏れたら全 private リポにアクセスされる。`.env.local` から外に出さない。
-- **vehicle-equipment 本番投入済み**: もう新規 install フローで vehicle-equipment は使えない (試したいなら別 cartridge を作る)。
-- **AppHarbor の `cartridges-registry.yaml`**: 既存 7 カートリッジは `mode: local` で登録済み。新規追加は末尾に `mode: installed` で。
+- 本日の作業詳細: `docs/work-log.md` の 2026-05-18 セクション
+- カートリッジ開発全般: [cartridge-template/CLAUDE.md](https://github.com/Tori-Take/cartridge-template/blob/main/CLAUDE.md)
+- リリース手順: [cartridge-template/docs/release-checklist.md](https://github.com/Tori-Take/cartridge-template/blob/main/docs/release-checklist.md)
+- AI 向けプロンプト集: [cartridge-template/docs/prompts.md](https://github.com/Tori-Take/cartridge-template/blob/main/docs/prompts.md)
+- AppHarbor 全体構造: 本リポジトリの `CLAUDE.md`
