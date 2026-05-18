@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { spawnSync } from 'child_process'
-import { writeFileSync, mkdirSync, existsSync, rmSync } from 'fs'
+import { writeFileSync, readFileSync, mkdirSync, existsSync, rmSync } from 'fs'
 import { join, resolve, relative } from 'path'
 import { getCartridge } from '@/lib/cartridge-scanner'
 
@@ -55,6 +55,16 @@ export async function POST(
   const routesGlobTs  = `${routesFromTsconfig}/**/*.ts`
   const routesGlobTsx = `${routesFromTsconfig}/**/*.tsx`
 
+  // 親 tsconfig の paths を読み取り、Studio node_modules へのフォールバックを追加。
+  // _local カートリッジは Junction で Studio 外を指すため、
+  // tsc の通常モジュール解決では Studio の node_modules に到達しない。
+  const studioFromTmp = relative(tmpDir, STUDIO_ROOT).replace(/\\/g, '/')
+  let parentPaths: Record<string, string[]> = {}
+  try {
+    const parentTsconfig = JSON.parse(readFileSync(join(STUDIO_ROOT, 'tsconfig.json'), 'utf-8'))
+    parentPaths = parentTsconfig.compilerOptions?.paths ?? {}
+  } catch { /* use empty */ }
+
   const tsconfigContent = {
     extends: '../../tsconfig.json',
     compilerOptions: {
@@ -62,6 +72,14 @@ export async function POST(
       incremental: false,
       pretty:      false,
       tsBuildInfoFile: null,
+      preserveSymlinks: true,
+      ignoreDeprecations: '6.0',
+      baseUrl: studioFromTmp,
+      typeRoots: ['./node_modules/@types'],
+      paths: {
+        ...parentPaths,
+        "*": ["./node_modules/@types/*", "./node_modules/*"],
+      },
     },
     include: [routesGlobTs, routesGlobTsx],
     exclude: ['node_modules', 'workspace', '.next', '.studio-db'],

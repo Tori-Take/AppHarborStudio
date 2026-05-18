@@ -67,7 +67,9 @@ export async function GET(
     const unpushed = git('log', `${remoteRef}..HEAD`, '--oneline')
     const dirty = git('status', '--porcelain')
     const unpushedCount = unpushed ? unpushed.split('\n').filter(Boolean).length : 0
-    const dirtyCount = dirty ? dirty.split('\n').filter(Boolean).length : 0
+    const IGNORE_PATTERNS = [/^\?\?\s+\.claude\//]
+    const dirtyLines = dirty ? dirty.split('\n').filter(Boolean).filter(l => !IGNORE_PATTERNS.some(p => p.test(l))) : []
+    const dirtyCount = dirtyLines.length
 
     if (unpushedCount === 0 && dirtyCount === 0) {
       checks.push({ id: 'pushed', label: '最新コードが push 済み', ok: true, detail: 'ローカルとリモートは同期しています' })
