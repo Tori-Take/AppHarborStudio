@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server'
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { getCartridge } from '@/lib/cartridge-scanner'
+import type { CartridgeManifest } from '@/lib/cartridge-scanner'
 import { createCartridgeInstallPr } from '@/lib/github/cartridge-pr'
+import { generateAppsInsertSql } from '@/lib/github/apps-insert'
 
 /**
  * Web Studio → AppHarbor 本番リポに「カートリッジ install PR」を作成する。
@@ -59,7 +61,7 @@ export async function POST(
     )
   }
   const schemaSql = readFileSync(schemaPath, 'utf-8')
-  const migrationSql = generateProductionMigration(safe, schemaSql, version, cartridgeRepo)
+  const migrationSql = generateProductionMigration(safe, schemaSql, version, cartridgeRepo, entry.manifest)
 
   // PR 作成
   try {
@@ -110,6 +112,7 @@ function generateProductionMigration(
   schemaSql: string,
   version: string,
   sourceRepo: string,
+  manifest: CartridgeManifest | null,
 ): string {
   const ts = new Date().toISOString()
   let sql = ''
@@ -117,13 +120,16 @@ function generateProductionMigration(
   sql += `-- cartridge: ${cartridgeId}\n`
   sql += `-- version:   ${version}\n`
   sql += `-- source:    https://github.com/${sourceRepo}/blob/main/db/schema.sql\n`
-  sql += `-- generated: ${ts}\n`
-  sql += `-- NOTE: 適用するには \`npx supabase db push --linked\` または \`supabase migration up\` を実行してください\n\n`
+  sql += `-- generated: ${ts}\n\n`
   // studio スキーマ参照を除去 (本番は public スキーマ)
-  let cleaned = schemaSql
+  const cleaned = schemaSql
     .replace(/create\s+schema\s+if\s+not\s+exists\s+studio\s*;/gi, '')
     .replace(/set\s+search_path\s+to\s+studio\s*,?\s*public\s*;/gi, '')
     .replace(/studio\./g, '')
-  sql += cleaned.trim() + '\n'
+  sql += cleaned.trim() + '\n\n'
+  // apps テーブル登録
+  if (manifest) {
+    sql += generateAppsInsertSql(manifest)
+  }
   return sql
 }

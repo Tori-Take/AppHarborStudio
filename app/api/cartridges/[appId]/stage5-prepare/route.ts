@@ -3,6 +3,8 @@ import { readFileSync, existsSync } from 'fs'
 import { resolve, join } from 'path'
 import { spawnSync } from 'child_process'
 import { getCartridge } from '@/lib/cartridge-scanner'
+import type { CartridgeManifest } from '@/lib/cartridge-scanner'
+import { generateAppsInsertSql } from '@/lib/github/apps-insert'
 
 type CheckItem = {
   id: string
@@ -136,7 +138,7 @@ export async function GET(
 function generateProductionMigration(
   cartridgeId: string,
   schemaSql: string,
-  manifest: { tables?: string[]; [key: string]: unknown } | null,
+  manifest: CartridgeManifest | null,
 ): string {
   const timestamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
   const tables = manifest?.tables ?? extractTableNames(schemaSql)
@@ -175,6 +177,11 @@ function generateProductionMigration(
       sql += `  for all\n`
       sql += `  using (organization_id = (current_setting('app.current_org_id'))::uuid);\n\n`
     }
+  }
+
+  // apps テーブル登録
+  if (manifest) {
+    sql += generateAppsInsertSql(manifest)
   }
 
   return sql
