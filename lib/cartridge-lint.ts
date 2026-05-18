@@ -259,6 +259,21 @@ function lintSchemaSql(schemaPath: string, cartridgeDir: string): LintIssue[] {
 function classify(spec: string): { severity: 'error' | 'warn'; message: string } | null {
   if (spec.startsWith('.')) return null  // 相対 import: OK
 
+  // ── @appharbor/sdk: cartridge-template での推奨だが本番では resolve できない ──
+  // AppHarbor 本体の Vercel ビルドには `@appharbor/sdk` の webpack alias がなく、
+  // `Module not found: Can't resolve '@appharbor/sdk'` で必ず失敗する。
+  // 既存カートリッジ (daily-log / patrol-navi / vehicle-equipment ...) はすべて `@/sdk` を使う。
+  if (spec === '@appharbor/sdk' || spec.startsWith('@appharbor/sdk/')) {
+    const replacement = spec.replace('@appharbor/sdk', '@/sdk')
+    return {
+      severity: 'error',
+      message:
+        `${spec} は本番 AppHarbor で resolve できません ` +
+        `(Vercel build が "Module not found" で失敗します)。` +
+        `${replacement} に書き換えてください。`,
+    }
+  }
+
   if (spec.startsWith('@/')) {
     if (ALLOWED_AT_PATHS.has(spec) || spec.startsWith('@/sdk/')) return null
     for (const p of FORBIDDEN_AT_PREFIXES) {

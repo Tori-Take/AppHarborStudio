@@ -230,3 +230,41 @@ insert into profiles (id, organization_id, org_role, department_id, display_name
     ('33333333-3333-3333-3333-000000000413'::uuid, '11111111-1111-1111-1111-111111111111'::uuid, 'member',     '22222222-2222-2222-2222-000000000021'::uuid,   '後藤（総務）'),
     ('33333333-3333-3333-3333-000000000414'::uuid, '11111111-1111-1111-1111-111111111111'::uuid, 'member',     '22222222-2222-2222-2222-000000000021'::uuid,   '岡田（総務）')
   on conflict (id) do nothing;
+
+-- ============================================================
+-- お知らせ (announcements)
+-- AppHarbor 本体の `announcements` テーブルと shape を揃えた mock。
+-- カートリッジが sdk.notify() で発火、Platform Admin の手動投稿 (将来) も
+-- 同じテーブルに入る。本番との一貫性が重要なので公開カラム名は本番に合わせる。
+-- ============================================================
+-- 旧 mock テーブルが残っている場合はクリーンアップ
+drop table if exists notification_reads;
+drop table if exists notifications;
+
+create table if not exists announcements (
+  id              uuid        primary key default gen_random_uuid(),
+  title           text        not null,
+  body            text        not null default '',
+  target          text        not null default 'org' check (target in ('all', 'org')),
+  organization_id uuid        references organizations(id) on delete cascade,
+  department_ids  uuid[]      not null default '{}',
+  user_ids        uuid[]      not null default '{}',
+  source_app_id   text,
+  link            text,
+  published_at    timestamptz not null default now(),
+  expires_at      timestamptz,
+  created_by      uuid        references auth.users(id) on delete set null,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+create index if not exists announcements_org_idx         on announcements(organization_id);
+create index if not exists announcements_source_app_idx  on announcements(source_app_id);
+create index if not exists announcements_published_idx   on announcements(published_at desc);
+
+create table if not exists announcement_reads (
+  announcement_id uuid        not null references announcements(id) on delete cascade,
+  user_id         uuid        not null references auth.users(id) on delete cascade,
+  read_at         timestamptz not null default now(),
+  primary key (announcement_id, user_id)
+);

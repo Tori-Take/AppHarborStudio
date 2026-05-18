@@ -55,3 +55,50 @@ export type MockDepartment = {
   name:     string
   parentId: string | null
 }
+
+/**
+ * 通知（インフォ）入力。
+ * sdk.notify() がカートリッジから受け取るペイロード。
+ * source_app_id / organization_id / created_by はサーバー側で自動補完されるので
+ * カートリッジ作者が渡す必要があるのは title / body / scope / target / link のみ。
+ */
+export type NotifyInput = {
+  title:        string
+  body?:        string
+  link?:        string
+  /** 'org': 組織全員に / 'dept': 指定部署のみ / 'user': 指定ユーザーのみ */
+  scope?:       'org' | 'dept' | 'user'
+  /** scope='dept' のとき必須。対象部署 ID。 */
+  targetDeptId?: string | null
+  /** scope='user' のとき必須。対象ユーザー ID。 */
+  targetUserId?: string | null
+  /** カートリッジ ID 上書き。通常は middleware の x-cartridge-id から自動。 */
+  sourceAppId?: string
+}
+
+/**
+ * お知らせ 1 行の Studio UI 用 shape。
+ * 本番 AppHarbor の `announcements` テーブルとカラム名・型を揃えている
+ * (camelCase 化のみ)。NotificationBell / API ルートが使う。
+ */
+export type AnnouncementRow = {
+  id:              string
+  title:           string
+  body:            string
+  target:          'all' | 'org'
+  organizationId:  string | null
+  /** scope='dept' 相当 (空配列なら全員向け) */
+  departmentIds:   string[]
+  /** scope='user' 相当 (空配列なら全員向け) */
+  userIds:         string[]
+  sourceAppId:     string | null
+  link:            string | null
+  publishedAt:     string
+  createdBy:       string | null
+  createdAt:       string
+  /** 既読時刻 (notification_reads から join) */
+  readAt:          string | null
+}
+
+/** @deprecated NotificationRow は AnnouncementRow に統一されました。本番 schema と揃えた名称を使ってください。 */
+export type NotificationRow = AnnouncementRow

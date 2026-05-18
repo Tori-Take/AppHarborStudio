@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { useFullscreenMode } from '@/lib/use-fullscreen-mode'
 import { PhaseIndicator } from '@/components/PhaseIndicator'
+import { NotificationBell } from '@/components/NotificationBell'
 
 type QrInfo = { localUrl: string; qrDataUrl: string }
 
@@ -291,6 +292,8 @@ export function PreviewNav() {
       >
         {restartLabel}
       </button>
+
+      <NotificationBell appId={appId} />
 
       <a
         href="/inspector"

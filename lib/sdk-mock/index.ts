@@ -14,10 +14,10 @@
 
 import { getCurrentMockUserServer, getMockOrgServer } from './server-context'
 import { getOverrideRole, getManifestDefaultRole } from './app-permissions'
-import type { AppContext, OrgActor, OrgRole } from './types'
+import type { AppContext, NotifyInput, OrgActor, OrgRole } from './types'
 
 export type { OrgActor, OrgActor as Actor, AppContext } from './types'
-export type { OrgRole, MockUser, MockOrg } from './types'
+export type { OrgRole, MockUser, MockOrg, NotifyInput, AnnouncementRow, NotificationRow } from './types'
 
 const synthesizeActor = async (): Promise<OrgActor> => {
   const u = await getCurrentMockUserServer()
@@ -200,4 +200,76 @@ export function getAdminSupabase(): any {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createServerSupabase(): any {
   return getLazySupabaseClient()
+}
+
+/**
+ * 通知（インフォ）を発火する。
+ *
+ * カートリッジから呼び出す。本番 AppHarbor と同じ `announcements` テーブルに
+ * INSERT する。Studio UI のベル (NotificationBell) はこのテーブルを読む。
+ *
+ * 自動補完されるフィールド:
+ *   - source_app_id   : middleware の x-cartridge-id から取得 (input.sourceAppId で上書き可)
+ *   - organization_id : 現在の組織 (固定 studio-sandbox)
+ *   - created_by      : 現在のログインユーザー
+ *
+ * scope → announcements カラム mapping (本番 lib/sdk/notify.ts と同じ):
+ *   scope='org'  → target='org', department_ids=[]   , user_ids=[]
+ *   scope='dept' → target='org', department_ids=[id] , user_ids=[]
+ *   scope='user' → target='org', department_ids=[]   , user_ids=[id]
+ *
+ * 使用例:
+ *   await notify({ title: '巡回点検の承認待ちがあります', scope: 'user', targetUserId: '...' })
+ */
+export async function notify(input: NotifyInput): Promise<{ id: string }> {
+  if (!input.title || !input.title.trim()) {
+    throw new Error('notify(): title は必須です')
+  }
+  const scope = input.scope ?? 'org'
+  if (scope === 'dept' && !input.targetDeptId) {
+    throw new Error('notify(): scope="dept" のときは targetDeptId が必須です')
+  }
+  if (scope === 'user' && !input.targetUserId) {
+    throw new Error('notify(): scope="user" のときは targetUserId が必須です')
+  }
+
+  // source_app_id: 明示指定 > middleware ヘッダー > エラー
+  let sourceAppId = input.sourceAppId
+  if (!sourceAppId) {
+    const { getCurrentCartridgeId } = await import('./db-source')
+    sourceAppId = (await getCurrentCartridgeId()) ?? undefined
+  }
+  if (!sourceAppId) {
+    throw new Error('notify(): source_app_id を解決できません。カートリッジ実行コンテキスト外から呼ぶ場合は sourceAppId を指定してください')
+  }
+
+  const user = await getCurrentMockUserServer()
+  const org  = getMockOrgServer()
+
+  const { getReadyPg } = await import('./pg')
+  const db = await getReadyPg()
+
+  const departmentIds = scope === 'dept' && input.targetDeptId ? [input.targetDeptId] : []
+  const userIds       = scope === 'user' && input.targetUserId ? [input.targetUserId] : []
+
+  const result = await db.query<{ id: string }>(
+    `insert into announcements
+       (title, body, target, organization_id, department_ids, user_ids,
+        source_app_id, link, created_by)
+     values ($1, $2, 'org', $3, $4, $5, $6, $7, $8)
+     returning id`,
+    [
+      input.title.trim(),
+      (input.body ?? '').trim(),
+      org.id,
+      departmentIds,
+      userIds,
+      sourceAppId,
+      input.link ?? null,
+      user.id,
+    ],
+  )
+
+  const id = result.rows[0]?.id ?? ''
+  return { id }
 }

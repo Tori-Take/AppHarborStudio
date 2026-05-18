@@ -91,6 +91,14 @@ function DbBrowser() {
     return acc
   }, {})
 
+  // ピン留め: notify() が書き込む通知テーブル群を最上部に常時表示。
+  // 通常のスキーマリストでも重複して見えるが、開発者が真っ先に確認したい
+  // 「通知が届いたか / 既読が記録されたか」を一発で開けるようにする (P5)。
+  const PINNED_TABLES = ['announcements', 'announcement_reads']
+  const pinned = PINNED_TABLES
+    .map((name) => tables.find((t) => t.schema === 'public' && t.name === name))
+    .filter((t): t is TableInfo => !!t)
+
   return (
     <div style={{ display: 'flex', gap: 16, height: 'calc(100vh - 80px)' }}>
       <aside style={{
@@ -106,6 +114,41 @@ function DbBrowser() {
             color: '#e2e8f0', padding: '4px 6px', borderRadius: 4, fontSize: 12,
           }}
         />
+
+        {pinned.length > 0 && !filter && (
+          <div style={{ marginBottom: 10, paddingBottom: 8, borderBottom: '1px dashed #334155' }}>
+            <div style={{ fontSize: 10, color: '#fbbf24', marginBottom: 2 }}>📢 通知 (notify / インフォ)</div>
+            {pinned.map((t) => {
+              const key = `${t.schema}.${t.name}`
+              const unread = t.name === 'announcements' && t.rows > 0
+              return (
+                <button
+                  key={key}
+                  onClick={() => loadTable(key)}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    width: '100%', textAlign: 'left',
+                    background: selected === key ? 'rgba(251,191,36,0.15)' : 'transparent',
+                    color: selected === key ? '#fbbf24' : '#e2e8f0',
+                    border: 'none', padding: '3px 6px', fontSize: 12, cursor: 'pointer',
+                    borderRadius: 4,
+                  }}
+                  title={
+                    t.name === 'announcements'
+                      ? 'sdk.notify() が INSERT する本番互換テーブル'
+                      : 'ユーザーごとの既読タイムスタンプ'
+                  }
+                >
+                  <span>{t.name}</span>
+                  <span style={{ fontSize: 10, color: unread ? '#fbbf24' : '#64748b' }}>
+                    {Math.round(t.rows)}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         {Object.entries(grouped).map(([schema, list]) => (
           <div key={schema} style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 10, color: '#64748b', marginBottom: 2 }}>{schema}</div>

@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from 'fs'
 import { resolve, join } from 'path'
 import { spawnSync } from 'child_process'
 import { getCartridge } from '@/lib/cartridge-scanner'
+import { lintCartridge } from '@/lib/cartridge-lint'
 
 type CheckItem = {
   id: string
@@ -95,6 +96,55 @@ export async function GET(
     checks.push({ id: 'github', label: 'GitHub リポジトリ', ok: true, detail: repoSlug })
   } else {
     checks.push({ id: 'github', label: 'GitHub リポジトリ', ok: false, detail: 'GitHub にリポジトリがないか、push されていません' })
+  }
+
+  // 5. cartridge-lint: 規約違反 import / schema 規約違反がないか
+  //    (cart-info-sender で踏んだ @appharbor/sdk → @/sdk 問題は ここで止める)
+  try {
+    const lintRes = lintCartridge(cartDir)
+    const errs = lintRes.issues.filter((i) => i.severity === 'error')
+    if (errs.length === 0) {
+      checks.push({
+        id: 'lint',
+        label: 'カートリッジ lint',
+        ok: true,
+        detail: `${lintRes.filesScanned} ファイル走査・違反なし`,
+      })
+    } else {
+      const first = errs[0]
+      checks.push({
+        id: 'lint',
+        label: 'カートリッジ lint',
+        ok: false,
+        detail:
+          `${errs.length} 件の error: ` +
+          `${first.file}:${first.line} ${first.message}` +
+          (errs.length > 1 ? ` (他 ${errs.length - 1} 件)` : ''),
+      })
+    }
+  } catch (e) {
+    checks.push({
+      id: 'lint',
+      label: 'カートリッジ lint',
+      ok: false,
+      detail: `lint 実行エラー: ${e instanceof Error ? e.message : String(e)}`,
+    })
+  }
+
+  // 6. 未コミット変更 / 未 push commit
+  if (repoRoot) {
+    const dirty = spawnSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf-8' })
+    const dirtyLines = (dirty.stdout ?? '').split('\n').filter((l) => l.trim() !== '')
+    const ahead = spawnSync('git', ['rev-list', '--count', '@{u}..HEAD'], { cwd: repoRoot, encoding: 'utf-8' })
+    const aheadCount = parseInt((ahead.stdout ?? '0').trim(), 10) || 0
+    if (dirtyLines.length === 0 && aheadCount === 0) {
+      checks.push({ id: 'git-sync', label: 'Git 同期', ok: true, detail: 'クリーン (未コミット 0 / 未 push 0)' })
+    } else {
+      const parts: string[] = []
+      if (dirtyLines.length > 0) parts.push(`未コミット ${dirtyLines.length} 件`)
+      if (aheadCount > 0)        parts.push(`未 push ${aheadCount} 件`)
+      checks.push({ id: 'git-sync', label: 'Git 同期', ok: false, detail: parts.join(' / ') })
+    }
   }
 
   // --- 生成物 ---

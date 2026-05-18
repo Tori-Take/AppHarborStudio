@@ -21,6 +21,11 @@ cartridges:
     path: _local/patrol-navi
     enabled: true
 
+  - id: info-sender
+    mode: local
+    path: _local/info-sender
+    enabled: true
+
   # ─── GitHub から fetch するカートリッジ ───────────────
   # 他人のカートリッジを利用する場合や、ローカル開発しない時はこちらを使う:
   #
