@@ -74,7 +74,40 @@ ${client.trim()}
   Studio がカートリッジ作成時にコピーしたもの。
 -->
 
-${readme}`, 'utf-8')
+${readme}
+
+---
+
+## Studio の制限事項
+
+### PGlite (Studio) の既知の制限事項
+
+Studio 内部の DB は Supabase 互換 PGlite モックです。
+本番 Supabase と以下の点で動作が異なります。
+実装時は必ず下記の制限を守ってください。
+
+#### ❌ Supabase リレーショナル select 構文は使用禁止
+
+\`\`\`ts
+// ❌ PGlite では動作しない（Studio で検証不可能になる）
+const { data } = await supabase
+  .from('my_records')
+  .select('*, cause:my_causes(id, label, category)')
+
+// ✅ 別クエリで取得し、JavaScript 側で Map を使って結合する
+const [recordsRes, causesRes] = await Promise.all([
+  supabase.from('my_records').select('id, cause_id, ...'),
+  supabase.from('my_causes').select('id, label, category'),
+])
+const causeMap = Object.fromEntries(
+  (causesRes.data ?? []).map((c) => [c.id, c])
+)
+const records = (recordsRes.data ?? []).map((r) => ({
+  ...r,
+  cause: r.cause_id ? (causeMap[r.cause_id] ?? null) : null,
+}))
+\`\`\`
+`, 'utf-8')
   }
 
   writeFileSync(join(ctxDir, 'RULES.md'),
@@ -137,6 +170,32 @@ create trigger <prefix>_items_updated_at
   before update on <prefix>_items
   for each row execute function update_updated_at();
 \`\`\`
+
+### 6. PGlite (Studio) で未対応の Supabase 構文を使わない
+
+Studio の DB は Supabase 互換 PGlite モックで、本番 Supabase より機能が限られる。
+**Supabase のリレーショナル select 構文は PGlite では動かない** (Studio で検証不可能になる)。
+
+\`\`\`ts
+// ❌ PGlite では動作しない
+await supabase.from('my_records')
+  .select('*, cause:my_causes(id, label, category)')
+
+// ✅ 別クエリ + JavaScript 側で Map 結合
+const [recordsRes, causesRes] = await Promise.all([
+  supabase.from('my_records').select('id, cause_id, ...'),
+  supabase.from('my_causes').select('id, label, category'),
+])
+const causeMap = Object.fromEntries(
+  (causesRes.data ?? []).map((c) => [c.id, c])
+)
+const records = (recordsRes.data ?? []).map((r) => ({
+  ...r,
+  cause: r.cause_id ? (causeMap[r.cause_id] ?? null) : null,
+}))
+\`\`\`
+
+詳細は \`.appharbor/PLATFORM.md\` の「Studio の制限事項」を参照。
 
 ## 共通テーブル (定義しない)
 

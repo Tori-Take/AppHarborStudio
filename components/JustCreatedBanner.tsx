@@ -1,10 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { PartyPopper, X, Trash2, Loader2, Copy, Check } from 'lucide-react'
+import { PartyPopper, X, Trash2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { buildQuickAiPrompt, type AiContext } from '@/lib/ai-context-prompt'
 
 type Props = {
   appId:       string
@@ -15,27 +14,11 @@ export function JustCreatedBanner({ appId, displayName }: Props) {
   const router = useRouter()
   const sp     = useSearchParams()
   const [busy, setBusy] = useState(false)
-  const [aiCtx, setAiCtx] = useState<AiContext | null>(null)
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    fetch(`/api/cartridges/${encodeURIComponent(appId)}/ai-context`)
-      .then(r => r.ok ? r.json() : null).then(j => setAiCtx(j)).catch(() => {})
-  }, [appId])
 
   if (sp.get('just-created') !== '1') return null
 
   const handleDismiss = () => {
     router.replace(`/cartridge/${encodeURIComponent(appId)}`)
-  }
-
-  const handleCopyAiContext = async () => {
-    if (!aiCtx) return
-    try {
-      await navigator.clipboard.writeText(buildQuickAiPrompt(aiCtx))
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2500)
-    } catch { alert('コピーに失敗しました') }
   }
 
   const handleRestart = async () => {
@@ -74,18 +57,9 @@ export function JustCreatedBanner({ appId, displayName }: Props) {
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             雛形フォルダと <code className="rounded bg-muted px-1 text-xs">.appharbor/</code> (SDK + 規約) を配置しました。
-            AI 開発コンテキストをコピーして Claude Code に貼り付けてください。
+            下の「開発を始めましょう」から AI 開発を開始してください。
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              onClick={handleCopyAiContext}
-              disabled={!aiCtx || busy}
-              className="gap-1.5"
-            >
-              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-              {copied ? 'コピー済み!' : 'AI コンテキストをコピー'}
-            </Button>
             <Button
               variant="outline"
               size="sm"
