@@ -938,3 +938,32 @@ B 実行 → 本番 PR → 動作確認 → 動いた → 完了
 | `/api/studio/restart-dev` | POST | dev server 再起動 |
 | `/api/studio/clean-start` | POST | 全データリセット |
 | `/api/mount` | POST | カートリッジ再マウント |
+
+---
+
+## 📝 ポストモーテム運用
+
+### 「ポストモーテム作って」と言われたら
+
+Studio のカートリッジ生成や UX に関する失敗・改善を記録する。
+
+**1. 原因のリポジトリを判定**
+
+| 原因の場所 | 配置するリポジトリ |
+|---|---|
+| Studio のプロンプト / UX / モック実装 | このリポジトリ（`docs/postmortems/`）|
+| SDK API / 型契約の不備 | [appharbor-sdk](https://github.com/Tori-Take/appharbor-sdk) |
+| AppHarbor 本体の CI / インフラ | [appharbor](https://github.com/Tori-Take/appharbor) |
+| 複数リポジトリ横断 | SDK リポジトリで詳細記録 + 索引追加 |
+
+**2. テンプレート**: `docs/postmortems/_template.md` をコピー
+ファイル名: `docs/postmortems/YYYY-MM-DD-短い説明.md`
+
+**3. 索引更新**: `docs/postmortems/README.md` の一覧に追記
+
+**4. 人間に確認 → PR 作成**
+
+### 人間とAIの役割分担
+
+- **人間**: 「これは記録すべき」と判断するトリガー
+- **AI**: 経緯の収集・分類・下書き・PR 作成
