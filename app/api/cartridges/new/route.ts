@@ -169,7 +169,7 @@ const NAME_PATTERN = /^[a-z][a-z0-9-]{1,40}$/
 
 /**
  * Studio の親ディレクトリ (cart-* リポを兄弟として並べる位置の既定値)。
- * 例: AppHarborStudio が C:/.../Projects/AppHarborStudio なら C:/.../Projects/
+ * 例: Studio が C:/.../Projects/AppHarbor-Studio なら C:/.../Projects/
  */
 function defaultCartridgeParent(): string {
   return resolve(process.cwd(), '..')

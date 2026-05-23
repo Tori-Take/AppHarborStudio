@@ -96,7 +96,7 @@ vehicle-equipment が `appharbor.vercel.app` で実稼働しています。
 
 ## 把握しておく主要パス
 
-- **AppHarborStudio**: `C:\Users\torit\Desktop\Projects\AppHarborStudio` (Tori-Take/AppHarborStudio)
+- **AppHarbor-Studio**: `C:\Users\torit\Desktop\Projects\AppHarbor-Studio` (Tori-Take/AppHarborStudio)
 - **AppHarbor 本体**: `C:\Users\torit\Desktop\Projects\AppHarbor` (Tori-Take/appharbor)
 - **テスト用カートリッジを作る場所**: `C:\Users\torit\Desktop\Projects\cart-<id>` (sibling フォルダ)
 - **本番 Vercel**: `https://appharbor.vercel.app` / `https://app-harbor-studio.vercel.app`
