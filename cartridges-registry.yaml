@@ -47,3 +47,9 @@ cartridges:
     ref: main
     mode: installed
     enabled: true
+
+  - id: material-discrepancy-checker
+    repo: Tori-Take/cart-material-discrepancy-checker
+    ref: main
+    mode: installed
+    enabled: true

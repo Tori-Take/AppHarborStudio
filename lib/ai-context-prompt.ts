@@ -1,5 +1,13 @@
 export type AiContext = {
-  sdk: { version: string; types: string | null; index: string | null; client: string | null; readme: string | null }
+  sdk: {
+    version:      string
+    types:        string | null
+    index:        string | null
+    client:       string | null
+    readme:       string | null
+    /** SDK リポの prompts/cartridge-author.md (規約・鉄則の散文部分) */
+    authorPrompt: string | null
+  }
   cartridge: { id: string; claudeMd: string | null; manifest: unknown }
 }
 
@@ -15,11 +23,7 @@ export function buildQuickAiPrompt(ctx: AiContext): string {
     if (ctx.sdk.index) { p.push('### サーバーサイド\n```typescript'); p.push(ctx.sdk.index.trim(), '```\n') }
     if (ctx.sdk.client) { p.push('### ブラウザサイド\n```typescript'); p.push(ctx.sdk.client.trim(), '```\n') }
   }
-  if (ctx.cartridge.claudeMd) { p.push(`---\n## 4. カートリッジ固有の指示\n`); p.push(ctx.cartridge.claudeMd, '') }
-  p.push('---\n## 5. マルチテナント設計の鉄則\n')
-  p.push('- **全テーブルに `organization_id uuid REFERENCES organizations(id)` を持たせる**')
-  p.push('- **RLS ポリシーで `organization_id` を必ず設定**')
-  p.push('- **全クエリで `.eq(\'organization_id\', ctx.actor.organizationId)` を必ず付ける**')
-  p.push('- **db/schema.sql を単一ソースとする**\n')
+  if (ctx.sdk.authorPrompt) { p.push('---\n## 4. カートリッジ作者の規約 (SDK 同梱)\n'); p.push(ctx.sdk.authorPrompt, '') }
+  if (ctx.cartridge.claudeMd) { p.push('---\n## 5. このカートリッジ固有の指示\n'); p.push(ctx.cartridge.claudeMd, '') }
   return p.join('\n')
 }

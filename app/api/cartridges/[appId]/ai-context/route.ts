@@ -37,12 +37,13 @@ export async function GET(
     try { return await readFile(p, 'utf-8') } catch { return null }
   }
 
-  const [types, index, client, readme, pkgJson] = await Promise.all([
+  const [types, index, client, readme, pkgJson, authorPrompt] = await Promise.all([
     safeRead(join(sdkRoot, 'src', 'types.ts')),
     safeRead(join(sdkRoot, 'src', 'index.ts')),
     safeRead(join(sdkRoot, 'src', 'client.ts')),
     safeRead(join(sdkRoot, 'README.md')),
     safeRead(join(sdkRoot, 'package.json')),
+    safeRead(join(sdkRoot, 'prompts', 'cartridge-author.md')),
   ])
 
   const sdkVersion = pkgJson ? (JSON.parse(pkgJson).version as string) : 'unknown'
@@ -57,6 +58,7 @@ export async function GET(
       index,
       client,
       readme,
+      authorPrompt,
     },
     cartridge: {
       id:        cartridge.id,

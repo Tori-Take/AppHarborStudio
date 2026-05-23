@@ -20,3 +20,6 @@ app/org/\[slug\]/apps/*/
 # 同期スクリプトで親から取り込まれた型ファイル（任意で git 管理しても OK）
 # 単独配布時は git 管理した状態で凍結したいので、コミット推奨。
 # lib/sdk-mock/types-synced.ts
+
+# Claude Code の作業用ディレクトリ（ローカル専用）
+.claude/

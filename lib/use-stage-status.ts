@@ -8,6 +8,13 @@ export type StageStatus = {
   completed: boolean
   completedAt: string | null
   lastError: string | null
+  /**
+   * このステージを検証 (完了) した時点の cart リポの HEAD コミット SHA。
+   * 「Stage X 完了」を押した時に自動キャプチャされる。
+   * check-updates API で「verifiedCommit から HEAD まで変化があるか」を判定する。
+   * 既存ユーザーのデータには undefined/null が入りうるので null 許容。
+   */
+  verifiedCommit: string | null
 }
 
 export type StageMap = Record<StageNum, StageStatus>
@@ -16,8 +23,32 @@ const KEY_PREFIX = 'stage-status:'
 const CHANGE_EVENT = 'stage-status-changed'
 
 function emptyMap(): StageMap {
-  const empty = (): StageStatus => ({ completed: false, completedAt: null, lastError: null })
+  const empty = (): StageStatus => ({
+    completed: false,
+    completedAt: null,
+    lastError: null,
+    verifiedCommit: null,
+  })
   return { 1: empty(), 2: empty(), 3: empty(), 4: empty(), 5: empty() }
+}
+
+/**
+ * localStorage に保存された古いフォーマット (verifiedCommit 欠落) を補完する。
+ */
+function normalizeStageMap(map: Partial<StageMap>): StageMap {
+  const base = emptyMap()
+  for (const s of [1, 2, 3, 4, 5] as StageNum[]) {
+    const stored = map[s]
+    if (stored) {
+      base[s] = {
+        completed: !!stored.completed,
+        completedAt: stored.completedAt ?? null,
+        lastError: stored.lastError ?? null,
+        verifiedCommit: stored.verifiedCommit ?? null,
+      }
+    }
+  }
+  return base
 }
 
 function readStorage(appId: string): StageMap {
@@ -26,13 +57,26 @@ function readStorage(appId: string): StageMap {
     const raw = localStorage.getItem(`${KEY_PREFIX}${appId}`)
     if (!raw) {
       const m = emptyMap()
-      m[1] = { completed: true, completedAt: new Date().toISOString(), lastError: null }
+      m[1] = {
+        completed: true,
+        completedAt: new Date().toISOString(),
+        lastError: null,
+        verifiedCommit: null,
+      }
       return m
     }
     const parsed = JSON.parse(raw) as Partial<StageMap>
-    const base = emptyMap()
-    base[1] = { completed: true, completedAt: new Date().toISOString(), lastError: null }
-    return { ...base, ...parsed } as StageMap
+    const normalized = normalizeStageMap(parsed)
+    // Stage 1 が未完了なら強制で完了マーク (ローカル開発は常に完了扱い)
+    if (!normalized[1].completed) {
+      normalized[1] = {
+        completed: true,
+        completedAt: new Date().toISOString(),
+        lastError: null,
+        verifiedCommit: null,
+      }
+    }
+    return normalized
   } catch {
     return emptyMap()
   }
@@ -85,12 +129,12 @@ export function useStageStatus(appId: string) {
         for (const s of [1, 2, 3, 4, 5] as StageNum[]) {
           // N/A stage → 常に完了
           if (na.has(s) && !current[s].completed) {
-            current[s] = { completed: true, completedAt: now, lastError: null }
+            current[s] = { completed: true, completedAt: now, lastError: null, verifiedCommit: null }
             modified = true
           }
           // 非 N/A + 初回 + auto 完了 → 完了
           if (raw === null && !na.has(s) && j?.auto?.[String(s)] && !current[s].completed) {
-            current[s] = { completed: true, completedAt: now, lastError: null }
+            current[s] = { completed: true, completedAt: now, lastError: null, verifiedCommit: null }
             modified = true
           }
         }
@@ -111,12 +155,46 @@ export function useStageStatus(appId: string) {
     return () => window.removeEventListener(CHANGE_EVENT, handler)
   }, [appId])
 
+  /**
+   * Stage を完了マークする。
+   * 完了時点の cart リポ HEAD コミットを自動取得して verifiedCommit に保存する
+   * (失敗しても fallback で null)。
+   */
   const markCompleted = useCallback((stage: StageNum) => {
-    setStages(prev => {
-      const next = { ...prev, [stage]: { completed: true, completedAt: new Date().toISOString(), lastError: null } }
-      writeStorage(appId, next)
-      return next
-    })
+    // cart の git HEAD をサーバから取得 (非同期)
+    fetch(`/api/cartridges/${encodeURIComponent(appId)}/git-info`)
+      .then(r => r.ok ? r.json() : null)
+      .then((j: { head?: string | null } | null) => {
+        setStages(prev => {
+          const next = {
+            ...prev,
+            [stage]: {
+              completed: true,
+              completedAt: new Date().toISOString(),
+              lastError: null,
+              verifiedCommit: j?.head ?? null,
+            },
+          }
+          writeStorage(appId, next)
+          return next
+        })
+      })
+      .catch(() => {
+        // git 取得失敗時も完了マークだけは行う
+        setStages(prev => {
+          const next = {
+            ...prev,
+            [stage]: {
+              completed: true,
+              completedAt: new Date().toISOString(),
+              lastError: null,
+              verifiedCommit: null,
+            },
+          }
+          writeStorage(appId, next)
+          return next
+        })
+      })
   }, [appId])
 
   const markError = useCallback((stage: StageNum, error: string) => {
@@ -129,7 +207,10 @@ export function useStageStatus(appId: string) {
 
   const resetStage = useCallback((stage: StageNum) => {
     setStages(prev => {
-      const next = { ...prev, [stage]: { completed: false, completedAt: null, lastError: null } }
+      const next = {
+        ...prev,
+        [stage]: { completed: false, completedAt: null, lastError: null, verifiedCommit: null },
+      }
       writeStorage(appId, next)
       return next
     })
@@ -140,7 +221,7 @@ export function useStageStatus(appId: string) {
     setStages(prev => {
       const next: StageMap = { ...prev }
       for (let s = stage; s <= 5; s++) {
-        next[s as StageNum] = { completed: false, completedAt: null, lastError: null }
+        next[s as StageNum] = { completed: false, completedAt: null, lastError: null, verifiedCommit: null }
       }
       writeStorage(appId, next)
       return next

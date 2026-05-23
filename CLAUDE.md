@@ -827,6 +827,99 @@ PatrolNavi はこの仕組みで既に Stage 5 を実証済み。
 
 ---
 
+## 🔄 Stage 5 後の改修フロー（2026-05-23 決定）
+
+> Stage 5 を一度通したカートリッジを後から改修する場合のフロー。
+> 2026-05-23 の壁打ちで設計を決定。
+
+### 前提
+
+Stage 5 完了後でもカートリッジは継続的に改修される (バグ修正・機能追加・スキーマ拡張)。
+そのとき Stage 1 に戻ってローカルで作業し、再度 Stage 5 を通すループが必要。
+
+### 改修の種類による分岐
+
+| 改修内容 | 必要な作業 |
+|---|---|
+| **画面・ロジックのみ** (routes/ 等) | カートリッジリポに git push するだけ。AppHarbor の Vercel ビルド時に `fetch-cartridges` が自動取り込み |
+| **schema 変更を含む** | Studio が migration 差分を生成 → AppHarbor リポに PR → 本番適用 |
+
+### schema 変更フロー (Plan B: スナップショット差分方式)
+
+```
+[初回 Stage 5]
+  schema.sql から CREATE TABLE migration を生成 (v1)
+  同時に db/schema.released.sql としてスナップショット保存
+                              ↓
+[Stage 1 に戻って改修]
+  schema.sql を編集 (カラム追加 / テーブル追加など)
+                              ↓
+[Stage 5 再実行 = 更新モード]
+  schema.sql vs schema.released.sql を diff
+  → ALTER TABLE migration を自動生成 (vN+1)
+  → 破壊的変更 (DROP / 型変更 / NOT NULL 追加) は警告
+  → PR で人間レビュー → マージ → 本番適用
+  → schema.released.sql を新しい schema.sql で上書きしてコミット
+```
+
+### 「動かないなら直す」イテレーションループ
+
+本番で問題が起きたら schema.sql を直してもう一度 Stage 5 を通す:
+
+```
+B 実行 → 本番 PR → 動作確認 → 動いた → 完了
+              ↑                       ↓
+              └── schema.sql 修正 ← 動かない
+```
+
+このループが回ることで、本番 DB に直接接続する機構 (Plan C) は不要。
+セキュリティリスク (本番 DB の service role key を Studio に持たせる) を回避できる。
+
+### Studio が自動でやる範囲と人間の責任
+
+| 範囲 | 担当 |
+|---|---|
+| schema.sql の編集 | **人間** (または AI に依頼) |
+| 差分検出 | Studio |
+| ALTER SQL の生成 | Studio |
+| 破壊的変更の警告 | Studio |
+| 「これで正しいか」の判断 | **人間** (PR レビュー) |
+| 本番適用 | **人間** (`supabase db push --linked`) |
+
+→ **自動化するのは「機械的な差分計算」だけ**。判断は常に人間。
+
+### イテレーションコスト
+
+| 段階 | イテレーション速度 | 推奨 |
+|---|---|---|
+| Stage 1 (PGlite) | ~5 秒 (即反映) | **ここで十分検証**してから先へ |
+| Stage 2 (Docker) | ~30 秒 | Postgres 固有のバグはここで |
+| Stage 3 (Studio Supabase) | ~30 秒 | クラウド DB の挙動を確認 |
+| Stage 5 (本番) | 5〜10 分 (push → PR → Vercel build) | ほぼ確実に動く状態で投入 |
+
+### 制約事項
+
+1. **本番にデータが入った後の破壊的変更は不可逆**
+   - DROP COLUMN / 型変更 / NOT NULL 追加 はデータ消失の可能性
+   - B の警告で人間に再確認させる
+2. **column rename は単純 diff では検出不可**
+   - 「削除＋追加」と判定されてしまう
+   - 将来的に `-- @rename: old_name -> new_name` のヒントを書く方式を検討
+3. **スキーマ修正は回数制限なし**
+   - migration が v2, v3, ... と積み重なる
+   - 古い migration は履歴として残るだけ
+
+### Plan B 実装範囲
+
+- `db/schema.released.sql` の自動生成 (Stage 5 成功時、ユーザーが commit)
+- schema.sql vs schema.released.sql の diff 計算
+- ALTER TABLE SQL の自動生成 (ADD COLUMN / ADD TABLE / CREATE INDEX 等)
+- 既存 migration ファイルから次の version 番号を採番 (v1 → v2 → ...)
+- 破壊的変更の警告 UI
+- Stage 5 UI で「初回」と「更新」のモード切替
+
+---
+
 ## API ルート一覧
 
 | エンドポイント | メソッド | 用途 |
