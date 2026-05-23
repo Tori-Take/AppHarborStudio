@@ -10,11 +10,13 @@ import { cn } from '@/lib/utils'
 
 type AiContext = {
   sdk: {
-    version: string
-    types:   string | null
-    index:   string | null
-    client:  string | null
-    readme:  string | null
+    version:      string
+    types:        string | null
+    index:        string | null
+    client:       string | null
+    readme:       string | null
+    /** SDK リポの prompts/cartridge-author.md (規約・鉄則の散文) */
+    authorPrompt: string | null
   }
   cartridge: {
     id:       string
@@ -23,18 +25,18 @@ type AiContext = {
   }
 }
 
-type Section = 'overview' | 'sdk-types' | 'sdk-functions' | 'cartridge-rules' | 'rules'
+type Section = 'overview' | 'sdk-types' | 'sdk-functions' | 'author-rules' | 'cartridge-rules'
 
 const SECTIONS: { key: Section; label: string; hint: string }[] = [
   { key: 'overview',        label: 'プラットフォーム概要 + 使い方', hint: 'SDK README (公開 API と例)' },
   { key: 'sdk-types',       label: 'SDK 型定義',                  hint: 'types.ts (Actor, AppContext 等)' },
   { key: 'sdk-functions',   label: 'SDK 関数シグネチャ',          hint: 'index.ts + client.ts (requireApp 等)' },
+  { key: 'author-rules',    label: 'カートリッジ作者の規約',      hint: 'SDK 同梱 prompts/cartridge-author.md' },
   { key: 'cartridge-rules', label: 'このカートリッジ固有の指示',  hint: 'cartridges/<id>/CLAUDE.md' },
-  { key: 'rules',           label: 'マルチテナント設計の鉄則',    hint: 'organization_id / RLS の必須ルール' },
 ]
 
 const DEFAULT_SELECTED: Set<Section> = new Set([
-  'overview', 'sdk-types', 'sdk-functions', 'cartridge-rules', 'rules',
+  'overview', 'sdk-types', 'sdk-functions', 'author-rules', 'cartridge-rules',
 ])
 
 /**
@@ -118,25 +120,17 @@ export function AiContextPanel({ appId }: { appId: string }) {
       }
     }
 
-    if (selected.has('cartridge-rules') && ctx.cartridge.claudeMd) {
+    if (selected.has('author-rules') && ctx.sdk.authorPrompt) {
       parts.push('---\n')
-      parts.push(`## 4. このカートリッジ (\`${ctx.cartridge.id}\`) 固有の指示\n`)
-      parts.push(ctx.cartridge.claudeMd)
+      parts.push('## 4. カートリッジ作者の規約 (SDK 同梱)\n')
+      parts.push(ctx.sdk.authorPrompt)
       parts.push('')
     }
 
-    if (selected.has('rules')) {
+    if (selected.has('cartridge-rules') && ctx.cartridge.claudeMd) {
       parts.push('---\n')
-      parts.push('## 5. マルチテナント設計の鉄則\n')
-      parts.push('AppHarbor はマルチテナント B2B プラットフォームです。以下のルールは厳守してください:\n')
-      parts.push('- **全テーブルに `organization_id uuid REFERENCES organizations(id)` を持たせる**')
-      parts.push('- **RLS ポリシーで `organization_id = (auth.jwt() ->> \'organization_id\')::uuid` を必ず設定**')
-      parts.push('- **全クエリ (SELECT / INSERT / UPDATE / DELETE) で `.eq(\'organization_id\', ctx.actor.organizationId)` を必ず付ける**')
-      parts.push('- **テーブルに `updated_at` を持たせ、`update_updated_at()` トリガで自動更新**')
-      parts.push('- **db/schema.sql を単一ソースとし、AppHarbor 共通テーブル (organizations / profiles 等) は定義しない**')
-      parts.push('- **manifest.json の `permissions` でアプリ内ロールを宣言する**')
-      parts.push('')
-      parts.push('テナント越境はセキュリティ事故です。テスト時に他組織のデータが見えていたら即座に修正してください。')
+      parts.push(`## 5. このカートリッジ (\`${ctx.cartridge.id}\`) 固有の指示\n`)
+      parts.push(ctx.cartridge.claudeMd)
       parts.push('')
     }
 
@@ -207,8 +201,8 @@ export function AiContextPanel({ appId }: { appId: string }) {
               (s.key === 'overview' && !!ctx.sdk.readme)
               || (s.key === 'sdk-types' && !!ctx.sdk.types)
               || (s.key === 'sdk-functions' && !!(ctx.sdk.index || ctx.sdk.client))
+              || (s.key === 'author-rules' && !!ctx.sdk.authorPrompt)
               || (s.key === 'cartridge-rules' && !!ctx.cartridge.claudeMd)
-              || s.key === 'rules'
 
             return (
               <label

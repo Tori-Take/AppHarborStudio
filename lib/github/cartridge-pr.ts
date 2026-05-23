@@ -40,13 +40,21 @@ export type InstallPrOptions = {
   targetBase?: string
   /** カートリッジ ID (path 用: cartridges/{cartridgeId}/) */
   cartridgeId: string
-  /** バージョン (manifest.json から) */
+  /** カートリッジの semantic version (manifest.json から、PR タイトル等の表示用) */
   version: string
+  /** Migration ファイル名の連番 (v1, v2, ...)。1 始まり */
+  schemaVersion: number
   /** 本番用 migration SQL */
   migrationSql: string
+  /**
+   * installMode:
+   *   - initial: 初回投入。registry 追加 + (registry がなければ) ファイルコピー
+   *   - update:  改修。registry は触らず、新 migration ファイルだけ追加
+   */
+  installMode: 'initial' | 'update'
 }
 
-export type InstallMode = 'files' | 'registry'
+export type InstallMode = 'files' | 'registry' | 'migration-only'
 
 export type InstallPrResult = {
   prUrl:    string
@@ -54,6 +62,7 @@ export type InstallPrResult = {
   branch:   string
   filesAdded: number
   mode:    InstallMode
+  schemaVersion: number
 }
 
 async function gh<T = unknown>(
@@ -144,6 +153,52 @@ async function targetHasRegistry(token: string, repo: string, ref: string): Prom
   }
 }
 
+/** ターゲットリポの registry に指定 cartridge ID が登録されているか確認 */
+export async function targetRegistryHasCartridge(
+  token: string,
+  repo: string,
+  ref: string,
+  cartridgeId: string,
+): Promise<boolean> {
+  try {
+    const cur = await gh<{ content: string; encoding: string }>(
+      token, 'GET', `/repos/${repo}/contents/cartridges-registry.yaml?ref=${ref}`,
+    )
+    const yaml = Buffer.from(cur.content, 'base64').toString('utf-8')
+    const escapedId = cartridgeId.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')
+    const re = new RegExp(`^\\s+-\\s+id:\\s*${escapedId}\\s*$`, 'm')
+    return re.test(yaml)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * ターゲットリポの supabase/migrations/ ディレクトリから
+ * 指定 cartridge の migration ファイル名一覧を取得する。
+ *
+ * 使い方: determineNextVersion() に渡して次の v 番号を採番。
+ */
+export async function listExistingCartridgeMigrations(
+  token: string,
+  repo: string,
+  ref: string,
+  cartridgeId: string,
+): Promise<string[]> {
+  try {
+    const list = await gh<Array<{ name: string; type: string }>>(
+      token, 'GET', `/repos/${repo}/contents/supabase/migrations?ref=${ref}`,
+    )
+    const cartridgeIdSafe = cartridgeId.replace(/-/g, '_')
+    const re = new RegExp(`_cart_${cartridgeIdSafe}_v\\d+\\.sql$`, 'i')
+    return list
+      .filter(f => f.type === 'file' && re.test(f.name))
+      .map(f => f.name)
+  } catch {
+    return []
+  }
+}
+
 /** registry に新エントリ 1 行を追加した文字列を返す */
 function appendRegistryEntry(yaml: string, cartridgeId: string, cartridgeRepo: string, ref: string): string {
   // 既にエントリがあるなら何もしない
@@ -159,23 +214,34 @@ export async function createCartridgeInstallPr(
 ): Promise<InstallPrResult> {
   const sourceRef = opts.cartridgeRef ?? 'main'
   const targetBase = opts.targetBase ?? 'main'
+  const isUpdate = opts.installMode === 'update'
 
-  // ターゲットリポが registry を持っているか確認 → mode 決定
-  const useRegistry = await targetHasRegistry(token, opts.targetRepo, targetBase)
-  const mode: InstallMode = useRegistry ? 'registry' : 'files'
+  // mode 決定
+  // - update:  migration-only (registry や files には触らない)
+  // - initial: registry があれば registry モード、なければ files モード (legacy)
+  let mode: InstallMode
+  if (isUpdate) {
+    mode = 'migration-only'
+  } else {
+    const useRegistry = await targetHasRegistry(token, opts.targetRepo, targetBase)
+    mode = useRegistry ? 'registry' : 'files'
+  }
 
   const treeEntries: TreeEntry[] = []
   let filesProcessed = 0
 
   if (mode === 'registry') {
-    // === registry モード: registry に 1 行追加するだけ ===
+    // === registry モード (initial): registry に 1 行追加するだけ ===
     const cur = await gh<{ content: string; encoding: string; sha: string }>(
       token, 'GET', `/repos/${opts.targetRepo}/contents/cartridges-registry.yaml?ref=${targetBase}`,
     )
     const currentYaml = Buffer.from(cur.content, 'base64').toString('utf-8')
     const newYaml = appendRegistryEntry(currentYaml, opts.cartridgeId, opts.cartridgeRepo, sourceRef)
     if (newYaml === currentYaml) {
-      throw new Error(`既に registry に ${opts.cartridgeId} が登録されています`)
+      throw new Error(
+        `既に registry に ${opts.cartridgeId} が登録されています。` +
+        `改修の場合は installMode: 'update' で呼び出してください。`,
+      )
     }
     const newSha = await createBlob(token, opts.targetRepo, newYaml)
     treeEntries.push({
@@ -185,8 +251,8 @@ export async function createCartridgeInstallPr(
       sha:  newSha,
     })
     filesProcessed = 1
-  } else {
-    // === files モード (legacy): 全ファイルをコピー ===
+  } else if (mode === 'files') {
+    // === files モード (initial, legacy): 全ファイルをコピー ===
     const sourceFiles = await listSourceTree(token, opts.cartridgeRepo, sourceRef)
     if (sourceFiles.length === 0) {
       throw new Error(`ソースリポにファイルがありません: ${opts.cartridgeRepo}`)
@@ -209,10 +275,11 @@ export async function createCartridgeInstallPr(
     }
     filesProcessed = additionalFiles.length
   }
+  // mode === 'migration-only': registry や files には何も追加しない (下で migration だけ追加される)
 
   // 4. Migration SQL を tree に追加
   const ts = new Date().toISOString().replace(/[-T:.]/g, '').slice(0, 14)
-  const migrationFilename = `${ts}_cart_${opts.cartridgeId.replace(/-/g, '_')}_v${opts.version.replace(/\./g, '_')}.sql`
+  const migrationFilename = `${ts}_cart_${opts.cartridgeId.replace(/-/g, '_')}_v${opts.schemaVersion}.sql`
   const migrationBlobSha = await createBlob(token, opts.targetRepo, opts.migrationSql)
   treeEntries.push({
     path: `supabase/migrations/${migrationFilename}`,
@@ -238,51 +305,69 @@ export async function createCartridgeInstallPr(
   )
 
   // 7. commit 作成
-  const commitMessage = `feat(cartridges): install ${opts.cartridgeId} v${opts.version}\n\nAuto-generated by AppHarbor Studio.\nSource: https://github.com/${opts.cartridgeRepo}\nMigration: ${migrationFilename}`
+  const verbForCommit = isUpdate ? 'update' : 'install'
+  const commitMessage = `feat(cartridges): ${verbForCommit} ${opts.cartridgeId} v${opts.version} (schema v${opts.schemaVersion})\n\nAuto-generated by AppHarbor Studio.\nSource: https://github.com/${opts.cartridgeRepo}\nMigration: ${migrationFilename}`
   const newCommit = await gh<{ sha: string }>(
     token, 'POST', `/repos/${opts.targetRepo}/git/commits`,
     { message: commitMessage, tree: newTree.sha, parents: [baseCommitSha] },
   )
 
   // 8. ブランチ作成 (push)
-  const branchName = `cart-install/${opts.cartridgeId}-v${opts.version}-${ts}`
+  const branchPrefix = isUpdate ? 'cart-update' : 'cart-install'
+  const branchName = `${branchPrefix}/${opts.cartridgeId}-v${opts.schemaVersion}-${ts}`
   await gh(
     token, 'POST', `/repos/${opts.targetRepo}/git/refs`,
     { ref: `refs/heads/${branchName}`, sha: newCommit.sha },
   )
 
   // 9. PR 作成
-  const modeNote = mode === 'registry'
-    ? `\`cartridges-registry.yaml\` に 1 行追加するだけの軽量 PR (registry モード)。\nVercel ビルド時に \`scripts/fetch-cartridges.js\` が GitHub から自動 clone する。`
-    : `\`cartridges/${opts.cartridgeId}/\` 配下のファイルを直接コピー (files モード)。\nターゲットリポに \`cartridges-registry.yaml\` がないため legacy モードで動作。`
+  const modeNote =
+    mode === 'registry'
+      ? `\`cartridges-registry.yaml\` に 1 行追加するだけの軽量 PR (registry モード)。\nVercel ビルド時に \`scripts/fetch-cartridges.js\` が GitHub から自動 clone する。`
+      : mode === 'files'
+        ? `\`cartridges/${opts.cartridgeId}/\` 配下のファイルを直接コピー (files モード)。\nターゲットリポに \`cartridges-registry.yaml\` がないため legacy モードで動作。`
+        : `**update モード**: 既存カートリッジへのスキーマ更新。\nregistry は変更せず、新 migration SQL ファイル 1 つだけを追加します。\nカートリッジコード (routes/) は \`fetch-cartridges\` が GitHub から最新を自動取得します。`
+
+  const titleVerb = isUpdate ? 'Update cartridge schema' : 'Install cartridge'
 
   const prBody = [
-    `**カートリッジ install (自動生成 PR)**`,
+    `**${isUpdate ? 'カートリッジスキーマ更新' : 'カートリッジ install'} (自動生成 PR)**`,
     '',
     `- カートリッジ: \`${opts.cartridgeId}\` v${opts.version}`,
     `- ソース: https://github.com/${opts.cartridgeRepo} (\`${sourceRef}\`)`,
     `- モード: **${mode}** (${filesProcessed} ファイル + migration 1)`,
+    `- Migration: \`${migrationFilename}\` (schema v${opts.schemaVersion})`,
     '',
     modeNote,
     '',
     `### マージ後の手順`,
     '',
-    `1. Vercel が自動で再ビルド ${mode === 'registry' ? '→ fetch-cartridges が GitHub から clone → sync-cartridges が app/ にマウント' : `→ カートリッジが \`cartridges/${opts.cartridgeId}/\` に展開される`}`,
-    `2. **本番 Supabase に migration 適用** (まだ自動化されてない):`,
+    isUpdate
+      ? `1. **本番 Supabase に migration 適用**:`
+      : `1. Vercel が自動で再ビルド ${mode === 'registry' ? '→ fetch-cartridges が GitHub から clone → sync-cartridges が app/ にマウント' : `→ カートリッジが \`cartridges/${opts.cartridgeId}/\` に展開される`}`,
+    isUpdate ? '' : `2. **本番 Supabase に migration 適用** (まだ自動化されてない):`,
     `   \`\`\`bash`,
     `   cd /path/to/appharbor`,
     `   git pull`,
     `   npx supabase db push --linked`,
     `   \`\`\``,
-    `3. AppHarbor 管理画面で「インストール可能アプリ」に出現 → install ボタン → 組織で有効化`,
+    isUpdate
+      ? `2. **カートリッジリポに \`db/schema.released.sql\` をコミット**:`
+      : `3. AppHarbor 管理画面で「インストール可能アプリ」に出現 → install ボタン → 組織で有効化`,
+    isUpdate
+      ? `   Studio が生成した snapshot を \`${opts.cartridgeRepo}\` の \`db/schema.released.sql\` として`
+      : '',
+    isUpdate
+      ? `   コミット & push。これが次回の改修時の diff 基準になります。`
+      : '',
     '',
     `🤖 Generated by AppHarbor Studio`,
-  ].join('\n')
+  ].filter(line => line !== '').join('\n')
 
   const pr = await gh<{ html_url: string; number: number }>(
     token, 'POST', `/repos/${opts.targetRepo}/pulls`,
     {
-      title: `Install cartridge: ${opts.cartridgeId} v${opts.version}`,
+      title: `${titleVerb}: ${opts.cartridgeId} v${opts.version} (schema v${opts.schemaVersion})`,
       head:  branchName,
       base:  targetBase,
       body:  prBody,
@@ -295,5 +380,6 @@ export async function createCartridgeInstallPr(
     branch:     branchName,
     filesAdded: treeEntries.length,
     mode,
+    schemaVersion: opts.schemaVersion,
   }
 }

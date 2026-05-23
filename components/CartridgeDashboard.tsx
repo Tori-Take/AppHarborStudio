@@ -6,7 +6,7 @@ import {
   ArrowLeft, Settings2, Rocket,
   Play, Search, Bot, HelpCircle,
   FolderOpen, Database, AlertTriangle,
-  Package, X,
+  Package, X, Lightbulb,
   Copy, Check, CheckCircle2,
 } from 'lucide-react'
 import {
@@ -19,7 +19,6 @@ import { buildAiFixPrompt, type LintIssue } from '@/lib/ai-fix-prompt'
 import { buildQuickAiPrompt, type AiContext } from '@/lib/ai-context-prompt'
 
 import { PlayButton } from '@/components/PlayButton'
-import { ExportButton } from '@/components/ExportButton'
 import { ResetCartridgeButton } from '@/components/ResetCartridgeButton'
 import { JustCreatedBanner } from '@/components/JustCreatedBanner'
 import { PipelineSection } from '@/components/PipelineSection'
@@ -524,8 +523,9 @@ function DashboardSection({
       {/* Auxiliary Tools */}
       <div>
         <h3 className="text-sm font-semibold text-muted-foreground mb-2">ツール</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
           <AiContextTool appId={c.id} />
+          <FeedbackPromptTool appId={c.id} />
           <ExportTool appId={c.id} />
           <FolderTool path={c.path} />
           <ManifestTool manifest={c.manifest} />
@@ -566,26 +566,98 @@ function AiContextTool({ appId }: { appId: string }) {
   )
 }
 
+function FeedbackPromptTool({ appId }: { appId: string }) {
+  const [copied, setCopied] = useState(false)
+  const [busy,   setBusy]   = useState(false)
+  const [err,    setErr]    = useState<string | null>(null)
+
+  const handleCopy = async () => {
+    setBusy(true)
+    setErr(null)
+    try {
+      const r = await fetch(`/api/cartridges/${encodeURIComponent(appId)}/feedback-prompt`)
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const text = await r.text()
+      await navigator.clipboard.writeText(text)
+      setCopied(true); setTimeout(() => setCopied(false), 2500)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      disabled={busy}
+      title="今回の開発で得た知見を SDK に反映するための「AI への振り返り依頼プロンプト」をコピーします"
+      className="flex flex-col items-center gap-1.5 rounded-lg border p-3 text-xs hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50"
+    >
+      {copied
+        ? <Check className="h-4 w-4 text-emerald-600" />
+        : <Lightbulb className="h-4 w-4 text-amber-600" />}
+      <span className="font-medium">
+        {copied ? 'コピー済み' : err ? 'エラー' : '振り返り'}
+      </span>
+    </button>
+  )
+}
+
 function ExportTool({ appId }: { appId: string }) {
   return (
-    <div className="flex flex-col items-center gap-1.5 rounded-lg border p-3 text-xs">
+    <a
+      href={`/api/cartridges/${encodeURIComponent(appId)}/export`}
+      download
+      title="このカートリッジを .appcart.json ファイルとして出力します。AppHarbor の「JSON で取り込み」から install できます。"
+      className="flex flex-col items-center gap-1.5 rounded-lg border p-3 text-xs text-foreground no-underline hover:bg-muted/50 transition-colors cursor-pointer"
+    >
       <Package className="h-4 w-4" />
-      <ExportButton appId={appId} />
-    </div>
+      <span className="font-medium">配布パッケージ</span>
+    </a>
   )
 }
 
 function FolderTool({ path }: { path: string }) {
-  const openExplorer = () => {
-    fetch('/api/fs/open', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path }) })
+  const [state, setState] = useState<'idle' | 'opening' | 'ok' | 'err'>('idle')
+  const [msg,   setMsg]   = useState<string | null>(null)
+
+  const openExplorer = async () => {
+    setState('opening')
+    setMsg(null)
+    try {
+      const r = await fetch('/api/fs/open', {
+        method:  'POST',
+        headers: { 'content-type': 'application/json' },
+        body:    JSON.stringify({ path }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`)
+      setState('ok')
+      setTimeout(() => setState('idle'), 2000)
+    } catch (e) {
+      setState('err')
+      setMsg(e instanceof Error ? e.message : 'unknown error')
+      setTimeout(() => setState('idle'), 4000)
+    }
   }
+
   return (
     <button
       onClick={openExplorer}
-      className="flex flex-col items-center gap-1.5 rounded-lg border p-3 text-xs hover:bg-muted/50 transition-colors cursor-pointer"
+      disabled={state === 'opening'}
+      title={msg ? `エラー: ${msg}\nパス: ${path}` : `エクスプローラで開く\nパス: ${path}`}
+      className="flex flex-col items-center gap-1.5 rounded-lg border p-3 text-xs hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50"
     >
-      <FolderOpen className="h-4 w-4" />
-      <span className="font-medium">フォルダを開く</span>
+      {state === 'ok'  ? <Check className="h-4 w-4 text-emerald-600" />
+        : state === 'err' ? <AlertTriangle className="h-4 w-4 text-destructive" />
+        : <FolderOpen className="h-4 w-4" />}
+      <span className="font-medium">
+        {state === 'ok'      ? '開きました'
+          : state === 'err'  ? 'エラー'
+          : state === 'opening' ? '開いています…'
+          : 'フォルダを開く'}
+      </span>
     </button>
   )
 }
