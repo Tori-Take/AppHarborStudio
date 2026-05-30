@@ -1,6 +1,8 @@
 node_modules/
 .next/
 out/
+# TypeScript の差分ビルドキャッシュ（生成物・コミット不要）
+*.tsbuildinfo
 .studio-db/
 # fetch-cartridges.js で GitHub から取り込まれたカートリッジ
 cartridges/_installed/

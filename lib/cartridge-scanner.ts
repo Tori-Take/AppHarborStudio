@@ -35,6 +35,8 @@ export type CartridgeManifest = {
   tablePrefix?: string
   /** schema.sql で作成するテーブル名一覧 */
   tables?:      string[]
+  /** true なら本体 chrome を隠して全画面表示する（本体 lib/cartridge/spec.ts と同期） */
+  fullscreen?:  boolean
   /** その他の任意フィールド */
   [key: string]: unknown
 }

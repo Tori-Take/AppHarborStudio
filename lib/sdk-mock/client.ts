@@ -159,3 +159,6 @@ class BrowserSupabase {
 export function createBrowserSupabase(): BrowserSupabase {
   return new BrowserSupabase()
 }
+
+// 全画面カートリッジ用の「本体に戻る」ボタン（本体 @/sdk/client と shape を一致させる）
+export { BackToAppHarbor } from './back-to-appharbor'
