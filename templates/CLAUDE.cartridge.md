@@ -571,6 +571,39 @@ const ctx = await requireApp(slug, '{{CARTRIDGE_ID}}')
 {ctx.role === 'admin' && <button>管理者専用機能</button>}
 ```
 
+## 🖥 全画面表示（任意）
+
+ゲームや没入系アプリで、AppHarbor 本体のメニュー（上ヘッダー・サイドバー・下ボトムナビ）を
+隠して画面いっぱいに表示したい場合、`manifest.json` に `fullscreen: true` を指定する:
+
+```json
+{
+  "fullscreen": true
+}
+```
+
+省略時は通常表示（既存の挙動）。指定したアプリだけが全画面になる。
+スマートフォンで没入して遊ぶゲームなどに向く。
+
+### ⚠ 全画面にしたら「本体に戻る」ボタンが必須
+
+全画面では本体のメニューが一切出ないため、**`@/sdk/client` の `<BackToAppHarbor />` を
+最低1箇所必ず置く**こと（押すと本体のアプリ一覧 `/org/[slug]/apps` に戻る）。
+置かないと Studio の「規約チェック」が **error（赤）** になり提出できない。
+
+```tsx
+import { BackToAppHarbor } from '@/sdk/client'
+
+export default function Page() {
+  return (
+    <main>
+      <BackToAppHarbor />   {/* 既定で画面右上に固定表示。文言は label prop で変更可 */}
+      {/* ↓ ゲーム本体など */}
+    </main>
+  )
+}
+```
+
 ## チェックリスト（提出前に）
 
 - [ ] Studio の「規約チェック」が緑になっている
@@ -581,3 +614,4 @@ const ctx = await requireApp(slug, '{{CARTRIDGE_ID}}')
 - [ ] manifest.json の `permissions` がコードと一致している
 - [ ] manifest.json の `tablePrefix` でテーブル名が始まっている
 - [ ] `studioCompatible: true` を明示
+- [ ] （全画面アプリのみ）manifest に `fullscreen: true` を入れたら、`@/sdk/client` の `<BackToAppHarbor />` を配置した（規約チェックで強制）

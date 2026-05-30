@@ -60,6 +60,7 @@ export type LintIssue = {
 export function lintCartridge(cartridgeDir: string): { issues: LintIssue[]; filesScanned: number } {
   const issues: LintIssue[] = []
   let filesScanned = 0
+  let usesBackButton = false
 
   function scan(dir: string) {
     if (!existsSync(dir)) return
@@ -78,6 +79,7 @@ export function lintCartridge(cartridgeDir: string): { issues: LintIssue[]; file
   function scanFile(file: string) {
     const rel = relative(cartridgeDir, file)
     const lines = readFileSync(file, 'utf-8').split('\n')
+    if (lines.some((l) => l.includes('BackToAppHarbor'))) usesBackButton = true
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
       IMPORT_REGEX.lastIndex = 0
@@ -91,6 +93,25 @@ export function lintCartridge(cartridgeDir: string): { issues: LintIssue[]; file
   }
 
   scan(cartridgeDir)
+
+  // 全画面カートリッジは戻るボタン必須（本体メニューが出ないため）
+  const manifestPath = join(cartridgeDir, 'manifest.json')
+  if (existsSync(manifestPath)) {
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'))
+      if (manifest?.fullscreen === true && !usesBackButton) {
+        issues.push({
+          file: 'manifest.json',
+          line: 0,
+          spec: 'fullscreen',
+          severity: 'error',
+          message:
+            'fullscreen: true のカートリッジには @/sdk/client の <BackToAppHarbor /> を' +
+            '最低1箇所配置してください（全画面では本体メニューが出ないため、戻る導線が必須です）',
+        })
+      }
+    } catch { /* manifest パースエラーは validator 側で扱う */ }
+  }
 
   // db/schema.sql の規約チェック
   const schemaPath = join(cartridgeDir, 'db', 'schema.sql')
