@@ -54,7 +54,7 @@ export async function GET() {
   }
 
   // 新規カートリッジ作成時のデフォルト親フォルダ (Studio の親)
-  // 例: C:/.../Projects/AppHarborStudio → C:/.../Projects
+  // 例: C:/.../Projects/AppHarbor-Studio → C:/.../Projects
   const defaultCartridgeParent = resolve(process.cwd(), '..')
 
   return NextResponse.json({
