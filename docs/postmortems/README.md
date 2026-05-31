@@ -28,4 +28,4 @@ YYYY-MM-DD-短い説明.md
 
 | 日付 | タイトル | 影響範囲 |
 |---|---|---|
-| - | （まだなし） | - |
+| 2026-06-01 | [Stage 4 が進まない — ローカル junction と GitHub の split-brain](2026-06-01-stage4-local-github-split-brain.md) | Studio UX / Stage 4 |
