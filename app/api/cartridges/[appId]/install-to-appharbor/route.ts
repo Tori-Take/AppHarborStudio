@@ -14,6 +14,13 @@ import {
   generateAlterSql,
   determineNextVersion,
 } from '@/lib/schema-diff'
+import { getRegistryRef } from '@/lib/github/registry-yaml'
+import {
+  listTags,
+  nextTag,
+  createTag,
+  getRepoDefaultBranchHead,
+} from '@/lib/github/github-ref'
 
 /**
  * Web Studio → AppHarbor 本番リポに「カートリッジ install / update PR」を作成する。
@@ -31,11 +38,18 @@ import {
  *   APPHARBOR_TARGET_BRANCH   : ベースブランチ (デフォルト: "main")
  */
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ appId: string }> },
 ) {
   const { appId } = await params
   const safe = appId.replace(/[^a-zA-Z0-9_-]/g, '')
+
+  let reqBody: { bumpRef?: boolean; newTag?: string; changeKind?: string } = {}
+  try {
+    reqBody = await req.json()
+  } catch {
+    // body が空でも OK (既存の初回/update フローは body 不要)
+  }
 
   const token = process.env.GITHUB_TOKEN
   if (!token) {
@@ -74,6 +88,90 @@ export async function POST(
     )
   }
   const schemaSql = readFileSync(schemaPath, 'utf-8')
+
+  // --- bumpRef モード (固定タグ運用: タグ作成 + registry ref bump) ---
+  if (reqBody.bumpRef) {
+    const changeKind = reqBody.changeKind ?? 'code'
+    const includeMigration = changeKind === 'schema'
+
+    // AppHarbor の registry から現在の pinned ref を取得
+    let currentPinnedRef: string | null
+    try {
+      const registryContent = await fetchRegistryContentDirect(token, targetRepo, targetBranch)
+      currentPinnedRef = getRegistryRef(registryContent, safe)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return NextResponse.json({ ok: false, error: msg }, { status: 500 })
+    }
+    if (!currentPinnedRef) {
+      return NextResponse.json(
+        { ok: false, error: `${safe} is not in AppHarbor registry` },
+        { status: 400 },
+      )
+    }
+
+    // migration SQL (schema 変更時のみ) — タグ作成より前に検証して dangling tag を防ぐ
+    let bumpMigrationSql = ''
+    let bumpSchemaVersion = 1
+    let bumpWarnings: ReturnType<typeof findDestructiveWarnings> = []
+    try {
+      if (includeMigration) {
+        const schemaReleasedPath = join(entry.path, 'db', 'schema.released.sql')
+        if (!existsSync(schemaReleasedPath)) {
+          return NextResponse.json(
+            { ok: false, error: 'スキーマ変更を検出しましたが db/schema.released.sql が未整備です。先にカートリッジリポに現在の schema.sql をコピーして commit してください。' },
+            { status: 400 },
+          )
+        }
+        const existing = await listExistingCartridgeMigrations(token, targetRepo, targetBranch, safe)
+        const nextVerStr = determineNextVersion(safe, existing)
+        bumpSchemaVersion = Number.parseInt(nextVerStr.replace(/^v/, ''), 10)
+
+        const releasedSql = readFileSync(schemaReleasedPath, 'utf-8')
+        const released = parseSchema(releasedSql)
+        const current = parseSchema(schemaSql)
+        const diff = diffSchemas(released, current)
+        bumpWarnings = findDestructiveWarnings(diff)
+        const alterResult = generateAlterSql(diff, {
+          cartridgeId: safe,
+          nextVersion: nextVerStr,
+          warnings: bumpWarnings,
+        })
+        bumpMigrationSql = alterResult.sql
+      }
+
+      // タグ採番 → cart リポの main HEAD にタグを作成
+      const existingTags = await listTags(token, cartridgeRepo)
+      const newTag = reqBody.newTag ?? nextTag(version, currentPinnedRef, existingTags)
+      const headData = await getRepoDefaultBranchHead(token, cartridgeRepo)
+      await createTag(token, cartridgeRepo, newTag, headData.sha)
+
+      const result = await createCartridgeInstallPr(token, {
+        cartridgeRepo,
+        cartridgeRef: 'main',
+        targetRepo,
+        targetBase: targetBranch,
+        cartridgeId: safe,
+        version,
+        schemaVersion: bumpSchemaVersion,
+        migrationSql: bumpMigrationSql,
+        installMode: 'update',
+        bumpRef: true,
+        newTag,
+        includeMigration,
+      })
+      return NextResponse.json({
+        ok: true,
+        ...result,
+        newTag,
+        installMode: 'bumpRef',
+        warnings: bumpWarnings,
+      })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return NextResponse.json({ ok: false, error: msg, installMode: 'bumpRef' }, { status: 500 })
+    }
+  }
 
   // --- モード判定 ---
   const schemaReleasedPath = join(entry.path, 'db', 'schema.released.sql')
@@ -197,4 +295,27 @@ function generateInitialProductionMigration(
     .replace(/studio\./g, '')
   sql += cleaned.trim() + '\n'
   return sql
+}
+
+/** AppHarbor リポの cartridges-registry.yaml の中身 (UTF-8) を GitHub API で取得 */
+async function fetchRegistryContentDirect(
+  token: string,
+  repo: string,
+  ref: string,
+): Promise<string> {
+  const GH_API = 'https://api.github.com'
+  const res = await fetch(
+    `${GH_API}/repos/${repo}/contents/cartridges-registry.yaml?ref=${ref}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'AppHarborStudio',
+      },
+    },
+  )
+  if (!res.ok) throw new Error(`Failed to fetch registry: ${res.status}`)
+  const data = (await res.json()) as { content: string; encoding: string }
+  return Buffer.from(data.content, 'base64').toString('utf-8')
 }

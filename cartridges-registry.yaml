@@ -53,3 +53,9 @@ cartridges:
     ref: main
     mode: installed
     enabled: true
+
+  - id: daigamen-test
+    repo: Tori-Take/daigamen-test
+    ref: main
+    mode: installed
+    enabled: true
