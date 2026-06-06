@@ -131,6 +131,24 @@ type CheckUpdatesResult = {
   needsReVerification: boolean
 }
 
+type AppHarborStatus = {
+  pinnedRef?: string
+  pinnedCommit?: string
+  cartHead?: string
+  cartBranch?: string
+  cartridgeRepo?: string
+  isNewer: boolean
+  isPinnedTag?: boolean
+  changeKind?: 'schema' | 'code' | 'none'
+  aheadBy?: number
+  changedFiles?: string[]
+  hasSchemaReleased?: boolean
+  manifestVersion?: string | null
+  notRegistered?: boolean
+  message?: string
+  error?: string
+}
+
 export function PipelineSection({ appId }: { appId: string }) {
   const { stages, naStages, currentStage, markCompleted, markError, rollbackTo } = useStageStatus(appId)
   const [busy, setBusy] = useState(false)
@@ -149,6 +167,10 @@ export function PipelineSection({ appId }: { appId: string }) {
   const [updates, setUpdates] = useState<CheckUpdatesResult | null>(null)
   const [updatesLoading, setUpdatesLoading] = useState(false)
   const [updatesExpanded, setUpdatesExpanded] = useState(true)
+  const [ahStatus, setAhStatus] = useState<AppHarborStatus | null>(null)
+  const [ahStatusLoading, setAhStatusLoading] = useState(false)
+  const [bumpBusy, setBumpBusy] = useState(false)
+  const [bumpResult, setBumpResult] = useState<{ ok: boolean; prUrl?: string; prNumber?: number; newTag?: string; error?: string } | null>(null)
 
   const fetchStage4 = useCallback(async () => {
     setStage4Loading(true)
@@ -182,6 +204,22 @@ export function PipelineSection({ appId }: { appId: string }) {
   useEffect(() => {
     if (currentStage === 5) fetchStage5()
   }, [currentStage, fetchStage5])
+
+  const fetchAppHarborStatus = useCallback(async () => {
+    setAhStatusLoading(true)
+    try {
+      const res = await fetch(`/api/cartridges/${encodeURIComponent(appId)}/appharbor-status`)
+      if (res.ok) {
+        const j = await res.json() as AppHarborStatus
+        setAhStatus(j)
+      }
+    } catch { /* ignore */ }
+    finally { setAhStatusLoading(false) }
+  }, [appId])
+
+  useEffect(() => {
+    if (currentStage === 5) fetchAppHarborStatus()
+  }, [currentStage, fetchAppHarborStatus])
 
   /**
    * Stage 5 完了後に「カートリッジリポに変更がないか」をチェックする。
@@ -345,6 +383,43 @@ export function PipelineSection({ appId }: { appId: string }) {
       setInstallResult({ ok: false, error: (e as Error).message })
     } finally {
       setInstallBusy(false)
+    }
+  }
+
+  const handleBumpRef = async () => {
+    if (bumpBusy || !ahStatus) return
+    const changeKind = ahStatus.changeKind ?? 'code'
+
+    if (changeKind === 'schema' && !ahStatus.hasSchemaReleased) {
+      alert('db/schema.released.sql が未整備です。カートリッジリポに現在の schema.sql をコピーして schema.released.sql として commit してください。')
+      return
+    }
+
+    let confirmMsg = `AppHarbor の ${ahStatus.pinnedRef} → cart main (${ahStatus.aheadBy != null && ahStatus.aheadBy >= 0 ? `${ahStatus.aheadBy} commits ahead` : 'ahead'}) に更新 PR を作成します。`
+    if (changeKind === 'schema') {
+      confirmMsg += '\n\n⚠️ スキーマ変更を検出しました。migration SQL も同梱されます。'
+    }
+    confirmMsg += '\n\nタグを自動作成し、AppHarbor に PR を送信します。よろしいですか？'
+    if (!confirm(confirmMsg)) return
+
+    setBumpBusy(true)
+    setBumpResult(null)
+    try {
+      const res = await fetch(`/api/cartridges/${encodeURIComponent(appId)}/install-to-appharbor`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bumpRef: true, changeKind }),
+      })
+      const j = await res.json()
+      setBumpResult(j)
+      if (j.ok) {
+        // 成功 → status を再取得 (isNewer が false になるはず)
+        fetchAppHarborStatus()
+      }
+    } catch (e) {
+      setBumpResult({ ok: false, error: (e as Error).message })
+    } finally {
+      setBumpBusy(false)
     }
   }
 
@@ -1224,6 +1299,85 @@ export function PipelineSection({ appId }: { appId: string }) {
                       </div>
                     )}
                   </div>
+
+                  {/* AppHarbor pinned ref 更新検知バナー */}
+                  {ahStatusLoading && (
+                    <div className="rounded border border-muted p-3 flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      AppHarbor の状態を確認中...
+                    </div>
+                  )}
+                  {ahStatus && !ahStatus.error && ahStatus.isPinnedTag && ahStatus.isNewer && (
+                    <div className="rounded border border-amber-500/40 bg-amber-500/5 p-3 space-y-2">
+                      <div className="text-xs font-semibold text-amber-800">
+                        AppHarbor: {ahStatus.pinnedRef} / cart: {ahStatus.aheadBy != null && ahStatus.aheadBy >= 0
+                          ? `${ahStatus.aheadBy} commits ahead`
+                          : 'ahead'}
+                        {ahStatus.changeKind === 'schema' && ' (schema change)'}
+                        {ahStatus.changeKind === 'code' && ' (code only)'}
+                      </div>
+                      <p className="text-[11px] text-amber-700">
+                        カートリッジリポが AppHarbor の pinned tag より進んでいます。
+                        {ahStatus.changeKind === 'schema' && !ahStatus.hasSchemaReleased && (
+                          <> スキーマ変更を含みますが、<strong>db/schema.released.sql</strong> が未整備です。先にコミットしてください。</>
+                        )}
+                        {ahStatus.changeKind === 'schema' && ahStatus.hasSchemaReleased && (
+                          <> スキーマ変更を含みます。migration SQL が自動生成されます。</>
+                        )}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          size="sm"
+                          onClick={handleBumpRef}
+                          disabled={bumpBusy || (ahStatus.changeKind === 'schema' && !ahStatus.hasSchemaReleased)}
+                          className="gap-1.5 bg-amber-600 hover:bg-amber-700"
+                        >
+                          {bumpBusy
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <ArrowRight className="h-3.5 w-3.5" />}
+                          {bumpBusy ? '更新 PR 作成中...' : '更新 PR を作成'}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={fetchAppHarborStatus}
+                          disabled={ahStatusLoading}
+                          className="gap-1.5"
+                        >
+                          <RefreshCw className={cn('h-3.5 w-3.5', ahStatusLoading && 'animate-spin')} />
+                          再チェック
+                        </Button>
+                      </div>
+                      {bumpResult?.ok && bumpResult.prUrl && (
+                        <div className="text-xs text-amber-700">
+                          <a
+                            href={bumpResult.prUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline hover:text-amber-900"
+                          >
+                            PR #{bumpResult.prNumber} を開く (tag: {bumpResult.newTag}) &rarr;
+                          </a>
+                        </div>
+                      )}
+                      {bumpResult && !bumpResult.ok && (
+                        <div className="text-[11px] text-destructive">
+                          {bumpResult.error}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {ahStatus && !ahStatus.error && ahStatus.isPinnedTag === false && (
+                    <div className="rounded border border-muted p-3 text-[11px] text-muted-foreground">
+                      このカートリッジは ref: main（自動反映）です。固定タグ運用に切替えると更新 PR を使えます。
+                    </div>
+                  )}
+                  {ahStatus && ahStatus.isPinnedTag && !ahStatus.isNewer && !ahStatusLoading && (
+                    <div className="rounded border border-emerald-500/20 bg-emerald-500/5 p-2 text-[11px] text-emerald-700">
+                      <Check className="inline h-3.5 w-3.5 mr-1" />
+                      AppHarbor は最新 ({ahStatus.pinnedRef})
+                    </div>
+                  )}
 
                   {/* メインアクション: AppHarbor 本番に PR を作成 */}
                   <div className={cn(
