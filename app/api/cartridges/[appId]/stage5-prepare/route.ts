@@ -152,9 +152,12 @@ export async function GET(
   }
 
   // AppHarbor registry entry (初回投入時のみ意味あり)
-  const registryEntry = repoSlug
-    ? `  - id: ${safe}\n    repo: ${repoSlug}\n    ref: main\n    version: "${version}"\n    mode: installed\n    enabled: true`
-    : `  - id: ${safe}\n    repo: YOUR_GITHUB_USER/${safe}\n    ref: main\n    version: "${version}"\n    mode: installed\n    enabled: true`
+  // update モードでは registry エントリは既に登録済みなので表示しない
+  const registryEntry = isUpdateMode
+    ? '(既に AppHarbor に登録済み — registry の ref は更新 PR で自動 bump されます)'
+    : repoSlug
+      ? `  - id: ${safe}\n    repo: ${repoSlug}\n    ref: main\n    version: "${version}"\n    mode: installed\n    enabled: true`
+      : `  - id: ${safe}\n    repo: YOUR_GITHUB_USER/${safe}\n    ref: main\n    version: "${version}"\n    mode: installed\n    enabled: true`
 
   const allOk = checks.every(c => c.ok)
 
