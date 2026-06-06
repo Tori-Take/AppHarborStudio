@@ -15,7 +15,9 @@
     "lint": "eslint",
     "sync-types": "node scripts/sync-types.js",
     "verify-standalone": "node scripts/check-no-parent-imports.js",
-    "init-project": "node scripts/init-project.js"
+    "init-project": "node scripts/init-project.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@appharbor/sdk": "github:Tori-Take/appharbor-sdk#v0.4.0",
@@ -47,6 +49,7 @@
     "eslint": "^10",
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4.2.4",
-    "typescript": "^6"
+    "typescript": "^6",
+    "vitest": "^4.1.8"
   }
 }
