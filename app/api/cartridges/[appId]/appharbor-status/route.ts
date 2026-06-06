@@ -83,7 +83,10 @@ export async function GET(
     }
 
     // 2. pinned ref → コミット SHA
-    const pinnedCommit = await resolveRefToCommit(token, targetRepo, pinnedRef)
+    // pinnedRef (registry の ref) は **cart リポのタグ** を指す
+    // (fetch-cartridges が `git clone --branch <ref> <cartRepo>` する単位)。
+    // AppHarbor リポ側にこのタグは存在しないので cart リポで解決する。
+    const pinnedCommit = await resolveRefToCommit(token, cartridgeRepo, pinnedRef)
 
     // 3. cart リポの main HEAD
     const { branch: cartBranch, sha: cartHead } = await getRepoDefaultBranchHead(token, cartridgeRepo)
@@ -97,14 +100,12 @@ export async function GET(
 
     if (isNewer) {
       // pinned → cartHead の間の変更ファイルを取得
-      // Note: pinnedRef は AppHarbor リポのタグだが、cart リポの同名タグを指す
       try {
-        const pinnedCommitInCart = await resolveRefToCommit(token, cartridgeRepo, pinnedRef)
         changedFiles = await getChangedFilesBetweenCommits(
-          token, cartridgeRepo, pinnedCommitInCart, cartHead,
+          token, cartridgeRepo, pinnedCommit, cartHead,
         )
         // aheadBy: compare API で取得
-        const compareData = await fetchCompare(token, cartridgeRepo, pinnedCommitInCart, cartHead)
+        const compareData = await fetchCompare(token, cartridgeRepo, pinnedCommit, cartHead)
         aheadBy = compareData.aheadBy
 
         // changeKind 判定: db/schema.sql が変更されていれば schema
