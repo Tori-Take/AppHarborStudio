@@ -438,7 +438,7 @@ export async function createCartridgeInstallPr(
   const pr = await gh<{ html_url: string; number: number }>(
     token, 'POST', `/repos/${opts.targetRepo}/pulls`,
     {
-      title: `${titleVerb}: ${opts.cartridgeId} v${opts.version} (schema v${opts.schemaVersion})`,
+      title: `${titleVerb}: ${opts.cartridgeId} v${opts.version}${schemaSuffix}`,
       head:  branchName,
       base:  targetBase,
       body:  prBody,
