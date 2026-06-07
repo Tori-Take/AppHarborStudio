@@ -44,7 +44,7 @@ export async function POST(
   const manifestPath   = join(cartDir, 'manifest.json')
   const schemaPath     = join(cartDir, 'db', 'schema.sql')
 
-  let droppedTables: string[] = []
+  const droppedTables: string[] = []
   let schemaReapplied = false
   let dbError: string | null = null
 

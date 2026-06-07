@@ -46,7 +46,7 @@ export async function POST(
   }
 
   // 1. PGlite のテーブルを先に DROP (cartDir 削除前に schema を読む必要あり)
-  let droppedTables: string[] = []
+  const droppedTables: string[] = []
   try {
     const handle = getPg()
     await handle.ready

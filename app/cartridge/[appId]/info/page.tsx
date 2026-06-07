@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { notFound, redirect } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { getCartridge } from '@/lib/cartridge-scanner'
 import {

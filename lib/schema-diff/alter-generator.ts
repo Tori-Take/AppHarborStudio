@@ -13,7 +13,7 @@
  *   - column rename を「削除 + 追加」と誤判定するとデータが消える
  *   - 「動かないなら直す」ループ前提なので、不確実な ALTER は人間任せにする
  */
-import type { DestructiveWarning, ParsedTable, SchemaDiff } from './types'
+import type { DestructiveWarning, SchemaDiff } from './types'
 
 export type AlterGenerationResult = {
   /** 生成された SQL (ヘッダコメント + ALTER 文すべて) */
