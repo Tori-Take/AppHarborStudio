@@ -144,9 +144,23 @@ type AppHarborStatus = {
   changedFiles?: string[]
   hasSchemaReleased?: boolean
   manifestVersion?: string | null
+  pinnedVersion?: string | null
+  pinnedCommitDate?: string | null
+  cartHeadDate?: string | null
   notRegistered?: boolean
   message?: string
   error?: string
+}
+
+/** ISO 日時を "YYYY/MM/DD HH:mm"（JST ロケール）に整形。無効なら "—" */
+function fmtCommitDate(iso?: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleString('ja-JP', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  })
 }
 
 export function PipelineSection({ appId }: { appId: string }) {
@@ -1310,21 +1324,54 @@ export function PipelineSection({ appId }: { appId: string }) {
                   {ahStatus && !ahStatus.error && ahStatus.isPinnedTag && ahStatus.isNewer && (
                     <div className="rounded border border-amber-500/40 bg-amber-500/5 p-3 space-y-2">
                       <div className="text-xs font-semibold text-amber-800">
-                        AppHarbor: {ahStatus.pinnedRef} / cart: {ahStatus.aheadBy != null && ahStatus.aheadBy >= 0
-                          ? `${ahStatus.aheadBy} commits ahead`
-                          : 'ahead'}
-                        {ahStatus.changeKind === 'schema' && ' (schema change)'}
-                        {ahStatus.changeKind === 'code' && ' (code only)'}
+                        更新あり: cart が pinned より {ahStatus.aheadBy != null && ahStatus.aheadBy >= 0
+                          ? `${ahStatus.aheadBy} commit 先行`
+                          : '先行'}
+                        {ahStatus.changeKind === 'schema' && '（スキーマ変更）'}
+                        {ahStatus.changeKind === 'code' && '（コードのみ）'}
                       </div>
-                      <p className="text-[11px] text-amber-700">
-                        カートリッジリポが AppHarbor の pinned tag より進んでいます。
-                        {ahStatus.changeKind === 'schema' && !ahStatus.hasSchemaReleased && (
-                          <> スキーマ変更を含みますが、<strong>db/schema.released.sql</strong> が未整備です。先にコミットしてください。</>
-                        )}
-                        {ahStatus.changeKind === 'schema' && ahStatus.hasSchemaReleased && (
-                          <> スキーマ変更を含みます。migration SQL が自動生成されます。</>
-                        )}
-                      </p>
+
+                      {/* 新旧 比較テーブル */}
+                      <div className="grid grid-cols-[auto_1fr_1fr] gap-x-3 gap-y-1 text-[11px]">
+                        <div></div>
+                        <div className="font-medium text-amber-800">AppHarbor（現在）</div>
+                        <div className="font-medium text-amber-800">cart main（最新）</div>
+
+                        <div className="text-amber-700/70">バージョン</div>
+                        <div className="font-mono text-amber-900">{ahStatus.pinnedVersion ?? '—'}</div>
+                        <div className="font-mono text-amber-900">{ahStatus.manifestVersion ?? '—'}</div>
+
+                        <div className="text-amber-700/70">コミット</div>
+                        <div className="font-mono text-amber-900">
+                          {ahStatus.pinnedCommit ? ahStatus.pinnedCommit.slice(0, 7) : '—'}
+                          {ahStatus.pinnedRef && <span className="ml-1 text-amber-700/60">({ahStatus.pinnedRef})</span>}
+                        </div>
+                        <div className="font-mono text-amber-900">{ahStatus.cartHead ? ahStatus.cartHead.slice(0, 7) : '—'}</div>
+
+                        <div className="text-amber-700/70">日時</div>
+                        <div className="font-mono text-amber-900">{fmtCommitDate(ahStatus.pinnedCommitDate)}</div>
+                        <div className="font-mono text-amber-900">{fmtCommitDate(ahStatus.cartHeadDate)}</div>
+                      </div>
+
+                      {ahStatus.changedFiles && ahStatus.changedFiles.length > 0 && (
+                        <div className="text-[11px] text-amber-700">
+                          <span className="text-amber-700/70">変更ファイル: </span>
+                          {ahStatus.changedFiles.slice(0, 4).join(', ')}
+                          {ahStatus.changedFiles.length > 4 && ` …(計 ${ahStatus.changedFiles.length} 件)`}
+                        </div>
+                      )}
+
+                      {ahStatus.changeKind === 'schema' && !ahStatus.hasSchemaReleased && (
+                        <p className="text-[11px] text-amber-700">
+                          スキーマ変更を含みますが、<strong>db/schema.released.sql</strong> が未整備です。先にコミットしてください。
+                        </p>
+                      )}
+                      {ahStatus.changeKind === 'schema' && ahStatus.hasSchemaReleased && (
+                        <p className="text-[11px] text-amber-700">
+                          スキーマ変更を含みます。migration SQL が自動生成されます。
+                        </p>
+                      )}
+
                       <div className="flex flex-wrap items-center gap-2">
                         <Button
                           size="sm"

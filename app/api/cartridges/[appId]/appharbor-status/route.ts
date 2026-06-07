@@ -97,6 +97,10 @@ export async function GET(
     let changeKind: 'schema' | 'code' | 'none' = 'none'
     let aheadBy = 0
     let changedFiles: string[] = []
+    // 新旧比較の表示用（isNewer のときだけ埋める。取得失敗は null）
+    let pinnedVersion: string | null = null
+    let pinnedCommitDate: string | null = null
+    let cartHeadDate: string | null = null
 
     if (isNewer) {
       // pinned → cartHead の間の変更ファイルを取得
@@ -117,6 +121,11 @@ export async function GET(
         changeKind = 'code'
         aheadBy = -1 // unknown
       }
+
+      // 新旧比較メタ（best-effort。各ヘルパーは失敗時 null を返す）
+      pinnedVersion = await fetchManifestVersionAtRef(token, cartridgeRepo, pinnedRef)
+      pinnedCommitDate = await fetchCommitDate(token, cartridgeRepo, pinnedCommit)
+      cartHeadDate = await fetchCommitDate(token, cartridgeRepo, cartHead)
     }
 
     // schema 変更時の追加情報: schema.released.sql の有無
@@ -136,6 +145,9 @@ export async function GET(
       changedFiles,
       hasSchemaReleased,
       manifestVersion: (entry.manifest?.version as string | undefined) ?? null,
+      pinnedVersion,
+      pinnedCommitDate,
+      cartHeadDate,
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
@@ -215,4 +227,62 @@ async function fetchCompare(
   if (!res.ok) return { aheadBy: -1 }
   const data = (await res.json()) as { ahead_by?: number }
   return { aheadBy: data.ahead_by ?? 0 }
+}
+
+/** 指定 ref 時点の cart manifest.json の version を取得（失敗時 null） */
+async function fetchManifestVersionAtRef(
+  token: string,
+  repo: string,
+  ref: string,
+): Promise<string | null> {
+  try {
+    const GH_API = 'https://api.github.com'
+    const res = await fetch(
+      `${GH_API}/repos/${repo}/contents/manifest.json?ref=${encodeURIComponent(ref)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'AppHarborStudio',
+        },
+      },
+    )
+    if (!res.ok) return null
+    const data = (await res.json()) as { content: string }
+    const json = JSON.parse(Buffer.from(data.content, 'base64').toString('utf-8')) as { version?: unknown }
+    return typeof json.version === 'string' ? json.version : null
+  } catch {
+    return null
+  }
+}
+
+/** コミットの日時 (committer date, ISO) を取得（失敗時 null） */
+async function fetchCommitDate(
+  token: string,
+  repo: string,
+  sha: string,
+): Promise<string | null> {
+  try {
+    const GH_API = 'https://api.github.com'
+    const res = await fetch(
+      `${GH_API}/repos/${repo}/git/commits/${sha}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'AppHarborStudio',
+        },
+      },
+    )
+    if (!res.ok) return null
+    const data = (await res.json()) as {
+      committer?: { date?: string }
+      author?: { date?: string }
+    }
+    return data.committer?.date ?? data.author?.date ?? null
+  } catch {
+    return null
+  }
 }
