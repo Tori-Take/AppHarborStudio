@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { existsSync, readFileSync, readdirSync, rmSync, statSync } from 'fs'
-import { join, resolve } from 'path'
+import { join } from 'path'
 import { getPg } from '@/lib/sdk-mock/pg'
 import { resolveCartridgesPath } from '@/lib/config'
 import { PERM_FILE } from '@/lib/sdk-mock/app-permissions'

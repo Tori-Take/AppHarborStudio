@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Plus, RefreshCw, Package, Database, Code2, AlertCircle } from 'lucide-react'
+import { Plus, Package, Database, Code2, AlertCircle } from 'lucide-react'
 import { scanCartridges } from '@/lib/cartridge-scanner'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'

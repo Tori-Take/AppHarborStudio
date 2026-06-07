@@ -1,4 +1,4 @@
-import { notFound, redirect } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { getCartridge } from '@/lib/cartridge-scanner'

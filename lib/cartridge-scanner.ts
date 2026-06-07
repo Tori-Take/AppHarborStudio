@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync, existsSync, realpathSync } from 'fs'
-import { resolve, join } from 'path'
+import { join } from 'path'
 import { resolveCartridgesPath } from './config'
 
 /**

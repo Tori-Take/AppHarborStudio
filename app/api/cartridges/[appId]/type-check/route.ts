@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { spawnSync } from 'child_process'
 import { writeFileSync, readFileSync, mkdirSync, existsSync, rmSync } from 'fs'
-import { join, resolve, relative } from 'path'
+import { join, relative } from 'path'
 import { getCartridge } from '@/lib/cartridge-scanner'
 
 /**

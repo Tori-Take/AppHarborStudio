@@ -18,7 +18,6 @@ import { cn } from '@/lib/utils'
 import { buildAiFixPrompt, type LintIssue } from '@/lib/ai-fix-prompt'
 import { buildQuickAiPrompt, type AiContext } from '@/lib/ai-context-prompt'
 
-import { PlayButton } from '@/components/PlayButton'
 import { ResetCartridgeButton } from '@/components/ResetCartridgeButton'
 import { JustCreatedBanner } from '@/components/JustCreatedBanner'
 import { PipelineSection } from '@/components/PipelineSection'
