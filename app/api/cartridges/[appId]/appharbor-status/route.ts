@@ -108,10 +108,9 @@ export async function GET(
         const compareData = await fetchCompare(token, cartridgeRepo, pinnedCommit, cartHead)
         aheadBy = compareData.aheadBy
 
-        // changeKind 判定: db/schema.sql が変更されていれば schema
-        const hasSchemaChange = changedFiles.some(f =>
-          f === 'db/schema.sql' || f.startsWith('db/schema'),
-        )
+        // changeKind 判定: db/schema.sql が変更されていれば schema。
+        // db/schema.released.sql (diff の基準ファイル) は本番スキーマではないので除外。
+        const hasSchemaChange = changedFiles.includes('db/schema.sql')
         changeKind = hasSchemaChange ? 'schema' : 'code'
       } catch {
         // tag が cart リポに無い場合など → code として扱う
