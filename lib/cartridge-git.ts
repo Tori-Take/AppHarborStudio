@@ -5,6 +5,16 @@
  * 共通で使う。失敗しても落ちないように try/catch でガード。
  */
 import { spawnSync } from 'child_process'
+import { resolve } from 'path'
+
+/** 2 つのパスが同一ディレクトリを指すか（正規化＋Windows 向けに大小無視で比較） */
+function samePath(a: string, b: string): boolean {
+  try {
+    return resolve(a).toLowerCase() === resolve(b).toLowerCase()
+  } catch {
+    return false
+  }
+}
 
 export type GitCommit = {
   /** 短い SHA (7 桁) */
@@ -59,6 +69,15 @@ export function getCartridgeGitInfo(cartDir: string): CartridgeGitInfo {
   if (rootRes.status !== 0) return empty
   const repoRoot = (rootRes.stdout || '').trim()
   if (!repoRoot) return empty
+
+  // カートリッジが「自前の git リポ」を持たない場合 (Studio 本体リポの
+  // cartridges/ 配下に置かれているだけ等)、git は親 (= Studio 本体) まで
+  // 遡ってしまい、全カートリッジが Studio の HEAD/未コミット状態を共有して
+  // 見える誤表示になる。repoRoot が Studio アプリのルート (process.cwd()) と
+  // 一致したら「自前リポなし」とみなして空を返す。
+  // (_local junction で外部リポを指すカートリッジは repoRoot がその外部リポに
+  //  なるため、ここには該当せず正しく自分の情報が出る)
+  if (samePath(repoRoot, process.cwd())) return empty
 
   // origin url → slug
   const originRes = spawnSync('git', ['config', '--get', 'remote.origin.url'], { cwd: repoRoot, encoding: 'utf-8' })
