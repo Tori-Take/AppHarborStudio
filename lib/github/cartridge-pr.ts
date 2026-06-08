@@ -454,3 +454,15 @@ export async function createCartridgeInstallPr(
     schemaVersion: opts.schemaVersion,
   }
 }
+
+/**
+ * AppHarbor の PR head ブランチ名が、指定カートリッジの「本番反映 PR」
+ * (cart-bump / cart-install / cart-update のいずれか) かどうかを判定する。
+ * ブランチ名は `${prefix}/${cartridgeId}-v${n}-${ts}` 形式 (createCartridgeInstallPr 参照)。
+ */
+export function matchesCartReleaseBranch(branch: string, cartridgeId: string): boolean {
+  const escaped = cartridgeId.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')
+  // prefix/<id>-v<digits>-... の形。<id> の直後は必ず "-v数字" が来る境界で厳密一致
+  const re = new RegExp(`^(cart-bump|cart-install|cart-update)/${escaped}-v\\d`)
+  return re.test(branch)
+}
