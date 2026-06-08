@@ -8,6 +8,7 @@ import {
   getRepoDefaultBranchHead,
   getChangedFilesBetweenCommits,
 } from '@/lib/github/github-ref'
+import { matchesCartReleaseBranch } from '@/lib/github/cartridge-pr'
 
 /**
  * AppHarbor の pinned ref と cart の GitHub main HEAD を比較する。
@@ -101,6 +102,7 @@ export async function GET(
     let pinnedVersion: string | null = null
     let pinnedCommitDate: string | null = null
     let cartHeadDate: string | null = null
+    let openPr: { url: string; number: number } | null = null
 
     if (isNewer) {
       // pinned → cartHead の間の変更ファイルを取得
@@ -126,6 +128,7 @@ export async function GET(
       pinnedVersion = await fetchManifestVersionAtRef(token, cartridgeRepo, pinnedRef)
       pinnedCommitDate = await fetchCommitDate(token, cartridgeRepo, pinnedCommit)
       cartHeadDate = await fetchCommitDate(token, cartridgeRepo, cartHead)
+      openPr = await findOpenReleasePr(token, targetRepo, safe)
     }
 
     // schema 変更時の追加情報: schema.released.sql の有無
@@ -148,6 +151,7 @@ export async function GET(
       pinnedVersion,
       pinnedCommitDate,
       cartHeadDate,
+      openPr,
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
@@ -282,6 +286,34 @@ async function fetchCommitDate(
       author?: { date?: string }
     }
     return data.committer?.date ?? data.author?.date ?? null
+  } catch {
+    return null
+  }
+}
+
+/** AppHarbor リポの open PR から、その cart の本番反映 PR を探す（best-effort・無ければ null） */
+async function findOpenReleasePr(
+  token: string,
+  targetRepo: string,
+  cartridgeId: string,
+): Promise<{ url: string; number: number } | null> {
+  try {
+    const GH_API = 'https://api.github.com'
+    const res = await fetch(
+      `${GH_API}/repos/${targetRepo}/pulls?state=open&per_page=100`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'AppHarborStudio',
+        },
+      },
+    )
+    if (!res.ok) return null
+    const list = (await res.json()) as Array<{ number: number; html_url: string; head?: { ref?: string } }>
+    const hit = list.find(p => p.head?.ref && matchesCartReleaseBranch(p.head.ref, cartridgeId))
+    return hit ? { url: hit.html_url, number: hit.number } : null
   } catch {
     return null
   }
