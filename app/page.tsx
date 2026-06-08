@@ -1,12 +1,28 @@
 import Link from 'next/link'
-import { Plus, Package, Database, Code2, AlertCircle } from 'lucide-react'
+import { Plus, Package, Database, Code2, AlertCircle, GitCommit } from 'lucide-react'
 import { scanCartridges } from '@/lib/cartridge-scanner'
+import { getCartridgeGitInfo } from '@/lib/cartridge-git'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { RemountButton } from '@/components/RemountButton'
 
+/** ISO 日時を "YYYY/MM/DD HH:mm"（JST ロケール）に整形。無効なら null */
+function fmtDate(iso: string | null): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleString('ja-JP', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  })
+}
+
 export default function Home() {
   const cartridges = scanCartridges()
+  // カードに出すリポジトリ情報（コミット・日時）。git でないものは null になる
+  const gitById = new Map(
+    cartridges.map((c) => [c.id, getCartridgeGitInfo(c.path)]),
+  )
 
   return (
     <div className="p-8">
@@ -65,6 +81,21 @@ export default function Home() {
                   <span className="ml-2">v{String(c.manifest.version)}</span>
                 )}
               </p>
+
+              {/* リポジトリ情報: コミット + 日時 (git リポのときだけ) */}
+              {(() => {
+                const git = gitById.get(c.id)
+                if (!git?.headShort) return null
+                const date = fmtDate(git.headDate)
+                return (
+                  <p className="mt-1 flex flex-wrap items-center gap-x-1.5 font-mono text-[11px] text-muted-foreground/80">
+                    <GitCommit className="h-3 w-3 shrink-0" />
+                    <span>{git.headShort}</span>
+                    {date && <span>· {date}</span>}
+                    {git.isDirty && <span className="text-amber-600">· 未コミット変更</span>}
+                  </p>
+                )
+              })()}
 
               {/* 説明 */}
               {c.manifest?.description != null && (
