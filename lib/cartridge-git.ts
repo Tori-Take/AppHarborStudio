@@ -30,6 +30,8 @@ export type CartridgeGitInfo = {
   head: string | null
   /** 短い HEAD */
   headShort: string | null
+  /** HEAD コミットの日時 (committer date, ISO)。取得失敗時 null */
+  headDate: string | null
   /** working tree に未コミット変更があるか */
   isDirty: boolean
   /** 未コミット変更があるファイル一覧 (path のみ) */
@@ -47,6 +49,7 @@ export function getCartridgeGitInfo(cartDir: string): CartridgeGitInfo {
     branch: null,
     head: null,
     headShort: null,
+    headDate: null,
     isDirty: false,
     dirtyFiles: [],
   }
@@ -71,6 +74,10 @@ export function getCartridgeGitInfo(cartDir: string): CartridgeGitInfo {
   const headRes = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf-8' })
   const head = headRes.status === 0 ? (headRes.stdout || '').trim() : null
   const headShort = head ? head.slice(0, 7) : null
+
+  // HEAD コミットの日時 (committer date, 厳密 ISO)
+  const dateRes = spawnSync('git', ['show', '-s', '--format=%cI', 'HEAD'], { cwd: repoRoot, encoding: 'utf-8' })
+  const headDate = dateRes.status === 0 ? ((dateRes.stdout || '').trim() || null) : null
 
   // dirty files (working tree)
   // porcelain v1 format:
@@ -97,6 +104,7 @@ export function getCartridgeGitInfo(cartDir: string): CartridgeGitInfo {
     branch,
     head,
     headShort,
+    headDate,
     isDirty: dirtyFiles.length > 0,
     dirtyFiles,
   }
