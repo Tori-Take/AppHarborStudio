@@ -11,32 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-
-/**
- * 確定版の ID 整形（先頭/末尾ハイフンを除去）。
- * blur 時・送信時・アプリ名からの自動候補に使う。
- */
-function slugify(input: string): string {
-  return softSlug(input).replace(/^-+|-+$/g, '')
-}
-
-/**
- * タイプ中用の整形。slugify と違い末尾ハイフンを残すので、
- * `my-app` を左から素直に打ってもハイフンが消えない。
- */
-function softSlug(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[\s_]+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
-    .replace(/-+/g, '-')
-    .slice(0, 40)
-}
-
-/** Windows ドライブパス / UNC / POSIX 絶対パスを大まかに判定 */
-function isAbsolutePath(p: string): boolean {
-  return /^[a-zA-Z]:[\\/]/.test(p) || /^\\\\/.test(p) || p.startsWith('/')
-}
+import { slugify, softSlug, isAbsolutePath } from '@/lib/slug'
 
 /**
  * 新規カートリッジ作成フォーム。
