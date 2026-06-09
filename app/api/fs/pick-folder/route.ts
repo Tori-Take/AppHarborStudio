@@ -35,8 +35,11 @@ export async function POST(req: Request) {
   const title       = (body.title ?? 'フォルダを選択').replace(/'/g, "''")
 
   // PowerShell スクリプトを構築。SelectedPath に空文字を渡すと例外になるので分岐。
+  // 注: PowerShell のシングルクォート文字列では \ はリテラル。エスケープすると
+  //     C:\\Users\\... という不正パスになり SelectedPath が無視されるため、
+  //     シングルクォートの '' 化のみ行う（\ は触らない）。
   const initialLine = initialPath
-    ? `$d.SelectedPath = '${initialPath.replace(/'/g, "''").replace(/\\/g, '\\\\')}'`
+    ? `$d.SelectedPath = '${initialPath.replace(/'/g, "''")}'`
     : ''
 
   const psScript = [

@@ -216,10 +216,12 @@ export async function POST(req: Request) {
   // 作成先の決定:
   //   parentPath が指定されたら: <parentPath>/cart-<id>/ (sibling パターン、junction で参照)
   //   未指定の場合:                 <default parent>/cart-<id>/ (Studio の親)
+  // 相対パスを黙って既定にすり替えると「別の場所に成功する」事故になるので明示的に弾く。
   const rawParent = (body.parentPath ?? '').trim()
-  const parent    = rawParent && isAbsolute(rawParent)
-    ? resolve(rawParent)
-    : defaultCartridgeParent()
+  if (rawParent && !isAbsolute(rawParent)) {
+    return NextResponse.json({ error: '作成先フォルダは絶対パスで指定してください' }, { status: 400 })
+  }
+  const parent = rawParent ? resolve(rawParent) : defaultCartridgeParent()
 
   if (!existsSync(parent) || !statSync(parent).isDirectory()) {
     return NextResponse.json({ error: `作成先フォルダが存在しません: ${parent}` }, { status: 400 })
