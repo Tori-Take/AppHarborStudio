@@ -1,10 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Check, Loader2, ArrowRight, ChevronRight, AlertCircle, X, RotateCcw, Circle, RefreshCw, Copy, Plus, SkipForward, FileCode } from 'lucide-react'
+import { Check, Loader2, ArrowRight, ChevronRight, AlertCircle, X, RotateCcw, Circle, RefreshCw, Copy, Plus, SkipForward } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useStageStatus, type StageNum } from '@/lib/use-stage-status'
+import { ReleasePanel } from '@/components/stage5/ReleasePanel'
+import { deriveReleaseState } from '@/lib/release-state'
+import { Stage5Details } from '@/components/stage5/Stage5Details'
 
 type StageDef = {
   num: StageNum
@@ -148,19 +151,9 @@ type AppHarborStatus = {
   pinnedCommitDate?: string | null
   cartHeadDate?: string | null
   notRegistered?: boolean
+  openPr?: { url: string; number: number } | null
   message?: string
   error?: string
-}
-
-/** ISO 日時を "YYYY/MM/DD HH:mm"（JST ロケール）に整形。無効なら "—" */
-function fmtCommitDate(iso?: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString('ja-JP', {
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  })
 }
 
 export function PipelineSection({ appId }: { appId: string }) {
@@ -236,8 +229,8 @@ export function PipelineSection({ appId }: { appId: string }) {
   }, [currentStage, fetchAppHarborStatus])
 
   /**
-   * Stage 5 完了後に「カートリッジリポに変更がないか」をチェックする。
-   * stages[5].verifiedCommit と現在の HEAD を比較して、差分があれば banner を出す。
+   * Stage 4 完了後に「カートリッジリポに変更がないか」をチェックする（ロールバック検知用）。
+   * verifiedCommit と現在の HEAD を比較して、差分があれば banner を出す。
    */
   const fetchUpdates = useCallback(async () => {
     setUpdatesLoading(true)
@@ -262,9 +255,9 @@ export function PipelineSection({ appId }: { appId: string }) {
     finally { setUpdatesLoading(false) }
   }, [appId, stages])
 
-  // Stage 5 完了状態に入ったら自動で 1 回チェック
+  // Stage 4 完了状態に入ったら自動で 1 回チェック
   useEffect(() => {
-    if (stages[5].completed) {
+    if (stages[4].completed) {
       fetchUpdates()
     } else {
       setUpdates(null)
@@ -437,6 +430,15 @@ export function PipelineSection({ appId }: { appId: string }) {
     }
   }
 
+  const handleRelease = () => {
+    const st = deriveReleaseState(ahStatus, ahStatusLoading)
+    if (st.kind === 'behind') {
+      handleBumpRef()
+    } else if (st.kind === 'not-registered') {
+      handleInstallToAppHarbor()
+    }
+  }
+
   const handleCopySnippet = () => {
     if (!stage4?.snippet) return
     navigator.clipboard.writeText(stage4.snippet)
@@ -466,8 +468,8 @@ export function PipelineSection({ appId }: { appId: string }) {
         </span>
       </div>
 
-      {/* 変更検出バナー (Stage 5 完了後にカートリッジに変更があった場合) */}
-      {stages[5].completed && updates?.hasChanges && (
+      {/* 変更検出バナー (Stage 4 完了後にカートリッジに変更があった場合) */}
+      {stages[4].completed && updates?.hasChanges && (
         <div className="rounded-lg border border-blue-500/40 bg-blue-500/5 p-3 space-y-2">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -585,11 +587,21 @@ export function PipelineSection({ appId }: { appId: string }) {
       <div className="relative">
         <div className="grid grid-cols-5 gap-2">
           {STAGES.map((stage, idx) => {
-            const isCompleted = stages[stage.num].completed
+            // Stage 5 はリリース状態を唯一の真実として点灯させる
+            const releaseSt = stage.num === 5 ? deriveReleaseState(ahStatus, ahStatusLoading) : null
+            const stage5Done = releaseSt?.kind === 'up-to-date'
+            const stage5Pending = releaseSt?.kind === 'pr-pending'
+            const stage5Attention = releaseSt?.kind === 'behind' || releaseSt?.kind === 'not-registered'
+
+            const isCompleted = stages[stage.num].completed || stage5Done
             const isNa = naStages.has(stage.num)
             const isPassedNa = isCompleted && isNa // 完了済み + この環境では非対応 (ローカル開発で通過済み)
-            const isCurrent = currentStage === stage.num && !isCompleted && !isNa
+            // Stage 5: 反映待ち/要対応のときは「現在地」として目立たせる
+            const isCurrent = (currentStage === stage.num && !isCompleted && !isNa) || stage5Attention || stage5Pending
             const hasError = !!stages[stage.num].lastError
+            // Stage 5 の amber 強調は「要対応」状態のみ（pr-pending は neutral 寄り）
+            const stageAttention = stage5Attention
+            const stagePending = stage5Pending && !stage5Attention
 
             return (
               <div key={stage.num} className="relative">
@@ -605,12 +617,13 @@ export function PipelineSection({ appId }: { appId: string }) {
                   'group relative z-10 rounded-lg border-2 p-2.5 text-center transition-colors',
                   isPassedNa && 'border-border bg-muted/30 opacity-60',
                   isCompleted && !isPassedNa && 'border-emerald-500 bg-emerald-500/5',
-                  isCurrent && !hasError && 'border-amber-500 bg-amber-500/5',
+                  isCurrent && !hasError && !stagePending && 'border-amber-500 bg-amber-500/5',
+                  isCurrent && !hasError && stagePending && 'border-blue-500/40 bg-blue-500/5',
                   isCurrent && hasError && 'border-destructive bg-destructive/5',
                   !isCompleted && isNa && 'border-border bg-muted/30 opacity-60',
                   !isCompleted && !isCurrent && !isNa && 'border-border bg-muted/20',
                 )}
-                title={isPassedNa ? 'ローカル開発で通過済み (この環境では操作不可)' : isNa ? 'この環境では使えません' : undefined}
+                title={isPassedNa ? 'ローカル開発で通過済み (この環境では操作不可)' : isNa ? 'この環境では使えません' : stagePending ? 'PR マージ待ち' : stageAttention ? '本番反映が必要です' : undefined}
                 >
                   {/* 完了済み + Stage 2 以上 + 操作可能 (= N/A でない) で再実行ボタンを表示 */}
                   {isCompleted && stage.num >= 2 && !isPassedNa && (
@@ -627,12 +640,17 @@ export function PipelineSection({ appId }: { appId: string }) {
                       'inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold',
                       isPassedNa && 'bg-muted-foreground/40 text-white',
                       isCompleted && !isPassedNa && 'bg-emerald-500 text-white',
-                      isCurrent && !hasError && 'bg-amber-500 text-white',
+                      isCurrent && !hasError && !stagePending && 'bg-amber-500 text-white',
+                      isCurrent && !hasError && stagePending && 'bg-blue-500 text-white',
                       isCurrent && hasError && 'bg-destructive text-white',
                       !isCompleted && isNa && 'bg-muted text-muted-foreground',
                       !isCompleted && !isCurrent && !isNa && 'bg-muted text-muted-foreground',
                     )}>
-                      {isCompleted ? <Check className="h-4 w-4" /> : isNa ? '—' : stage.num}
+                      {isCompleted
+                        ? <Check className="h-4 w-4" />
+                        : stagePending
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : isNa ? '—' : stage.num}
                     </span>
                   </div>
                   <div className="text-xs font-semibold">{stage.label}</div>
@@ -946,19 +964,6 @@ export function PipelineSection({ appId }: { appId: string }) {
         </div>
       )}
 
-      {/* All stages completed banner (改修フロー用に消さない) */}
-      {currentStage === 5 && stages[5].completed && (
-        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
-          <div className="flex items-center gap-2 text-sm text-emerald-700">
-            <Check className="h-4 w-4" />
-            <span className="font-semibold">本番稼働中</span>
-            <span className="text-xs text-emerald-600">
-              — 改修したい場合は下のパネルから「更新 PR」を作成できます (Plan B)
-            </span>
-          </div>
-        </div>
-      )}
-
       {/* Final stage panel (完了後も改修のため表示し続ける) */}
       {currentStage === 5 && (
         <div className="rounded-lg border bg-card p-4">
@@ -985,558 +990,64 @@ export function PipelineSection({ appId }: { appId: string }) {
 
               {stage5 && (
                 <div className="mt-3 space-y-3">
-                  {/* Mode banner */}
-                  <div
-                    className={cn(
-                      'rounded border px-3 py-2 text-xs',
-                      stage5.mode === 'update'
-                        ? 'border-blue-500/40 bg-blue-500/5 text-blue-800'
-                        : 'border-emerald-500/30 bg-emerald-500/5 text-emerald-800',
-                    )}
-                  >
-                    <div className="font-semibold flex items-center gap-1.5">
-                      {stage5.mode === 'update' ? '🔄 更新モード (Plan B)' : '🆕 初回投入モード'}
-                    </div>
-                    <p className="mt-0.5 text-[11px]">
-                      {stage5.mode === 'update'
-                        ? 'db/schema.released.sql が見つかりました。schema.sql との差分から ALTER migration を生成します。'
-                        : 'db/schema.released.sql がありません。CREATE TABLE 文を含む初回 migration を生成し、AppHarbor の registry に登録します。'}
-                    </p>
-                    {stage5.mode === 'initial' && stages[5].completed && (
-                      <div className="mt-1.5 rounded border border-amber-500/40 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-800">
-                        ⚠️ このカートリッジは既に本番稼働しています。Plan B 更新フローを使いたい場合は、
-                        まず<strong>現在の schema.sql の内容を <code className="bg-amber-500/10 px-1 rounded">db/schema.released.sql</code> としてカートリッジリポにコミット</strong>してください。
-                        その後、改修して再度この画面を開くと「更新モード」になります。
-                      </div>
-                    )}
-                  </div>
+                  {/* 本番反映: 状態に応じた単一パネル */}
+                  <ReleasePanel
+                    status={ahStatus}
+                    loading={ahStatusLoading}
+                    busy={bumpBusy || installBusy}
+                    onRelease={handleRelease}
+                    onRecheck={fetchAppHarborStatus}
+                    resultNode={
+                      bumpResult && (bumpResult.ok
+                        ? bumpResult.prUrl && (
+                          <div className="text-xs text-amber-700">
+                            <a href={bumpResult.prUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-900">
+                              PR #{bumpResult.prNumber} を開く（tag: {bumpResult.newTag}）&rarr;
+                            </a>
+                          </div>
+                        )
+                        : <div className="text-[11px] text-destructive">{bumpResult.error}</div>)
+                    }
+                    details={
+                      <Stage5Details
+                        stage5={stage5}
+                        typeCheckBusy={typeCheckBusy}
+                        typeCheckResult={typeCheckResult}
+                        onTypeCheck={handleTypeCheck}
+                        stage5Copied={stage5Copied}
+                        setStage5Copied={setStage5Copied}
+                      />
+                    }
+                  />
 
-                  {/* Readiness checks */}
-                  <div className="space-y-1.5">
-                    {stage5.checks.map(item => (
-                      <div key={item.id} className="flex items-start gap-2 text-xs">
-                        {item.ok
-                          ? <Check className="h-3.5 w-3.5 mt-0.5 shrink-0 text-emerald-500" />
-                          : <Circle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />}
-                        <div>
-                          <span className={cn('font-medium', item.ok ? 'text-emerald-700' : 'text-foreground')}>
-                            {item.label}
-                          </span>
-                          <span className="ml-1.5 text-muted-foreground">{item.detail}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Update mode: diff summary */}
-                  {stage5.mode === 'update' && stage5.diff && (
-                    <div className="rounded border bg-card p-3 space-y-2">
-                      <div className="text-xs font-semibold">📊 schema 差分サマリ</div>
-                      {stage5.diff.isEmpty ? (
-                        <p className="text-[11px] text-muted-foreground">
-                          差分なし。schema 変更がないので、カートリッジリポに git push するだけで本番反映されます。
-                          (PR 作成ボタンを押すと「差分なし」エラーになります)
-                        </p>
-                      ) : (
-                        <div className="text-[11px] space-y-1">
-                          {stage5.diff.newTables.length > 0 && (
-                            <div className="text-emerald-700">
-                              ✅ 新規テーブル ({stage5.diff.newTables.length}): {stage5.diff.newTables.join(', ')}
-                            </div>
-                          )}
-                          {stage5.diff.newColumns.length > 0 && (
-                            <div className="text-emerald-700">
-                              ✅ 新規カラム ({stage5.diff.newColumns.length}):{' '}
-                              {stage5.diff.newColumns.map(c => `${c.table}.${c.column} (${c.type})`).join(', ')}
-                            </div>
-                          )}
-                          {stage5.diff.changedColumns.length > 0 && (
-                            <div className="text-amber-700">
-                              ⚠️ 変更カラム ({stage5.diff.changedColumns.length}) — 手動対応推奨:{' '}
-                              {stage5.diff.changedColumns
-                                .map(c => `${c.table}.${c.column} (${c.beforeType} → ${c.afterType})`)
-                                .join(', ')}
-                            </div>
-                          )}
-                          {stage5.diff.droppedColumns.length > 0 && (
-                            <div className="text-destructive">
-                              ❌ 削除カラム ({stage5.diff.droppedColumns.length}):{' '}
-                              {stage5.diff.droppedColumns.map(c => `${c.table}.${c.column}`).join(', ')}
-                            </div>
-                          )}
-                          {stage5.diff.droppedTables.length > 0 && (
-                            <div className="text-destructive">
-                              ❌ 削除テーブル ({stage5.diff.droppedTables.length}):{' '}
-                              {stage5.diff.droppedTables.join(', ')}
-                            </div>
-                          )}
-                          {stage5.diff.newPolicies.length > 0 && (
-                            <div className="text-emerald-700">
-                              ✅ 新規ポリシー ({stage5.diff.newPolicies.length}):{' '}
-                              {stage5.diff.newPolicies.map(p => `${p.table}.${p.name}`).join(', ')}
-                            </div>
-                          )}
-                          {stage5.diff.changedPolicies.length > 0 && (
-                            <div className="space-y-1.5">
-                              <div className="text-blue-700">
-                                🔄 変更ポリシー ({stage5.diff.changedPolicies.length})
-                              </div>
-                              <div className="ml-4 space-y-2">
-                                {stage5.diff.changedPolicies.map((p, i) => (
-                                  <details key={i} className="text-[10px]">
-                                    <summary className="cursor-pointer text-blue-700 hover:text-blue-900 font-mono">
-                                      {p.table}.{p.name}
-                                    </summary>
-                                    <div className="mt-1 ml-2 space-y-1 font-mono">
-                                      <div className="rounded border border-muted-foreground/30 bg-muted/20 px-2 py-1">
-                                        <div className="text-muted-foreground text-[9px] mb-0.5">before:</div>
-                                        <pre className="whitespace-pre-wrap text-[10px]">{p.beforeRaw.trim()}</pre>
-                                      </div>
-                                      <div className="rounded border border-blue-500/30 bg-blue-500/5 px-2 py-1">
-                                        <div className="text-blue-700 text-[9px] mb-0.5">after:</div>
-                                        <pre className="whitespace-pre-wrap text-[10px]">{p.afterRaw.trim()}</pre>
-                                      </div>
-                                    </div>
-                                  </details>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {stage5.diff.droppedPolicies.length > 0 && (
-                            <div className="text-amber-700">
-                              ⚠️ 削除ポリシー ({stage5.diff.droppedPolicies.length}):{' '}
-                              {stage5.diff.droppedPolicies.map(p => `${p.table}.${p.name}`).join(', ')}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                  {/* 直近の install PR リンク（初回反映時） */}
+                  {installResult?.ok && installResult.prUrl && (
+                    <div className="text-xs">
+                      <a
+                        href={installResult.prUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 underline text-emerald-700 hover:text-emerald-900"
+                      >
+                        PR #{installResult.prNumber} を開く ({installResult.filesAdded} ファイル
+                        {installResult.schemaVersion && `, schema v${installResult.schemaVersion}`}
+                        {installResult.mode && `, mode: ${installResult.mode}`}) →
+                      </a>
                     </div>
                   )}
-
-                  {/* Update mode: warnings (severity 別表示) */}
-                  {stage5.mode === 'update' && stage5.warnings && stage5.warnings.length > 0 && (() => {
-                    const high   = stage5.warnings.filter(w => w.severity === 'high')
-                    const medium = stage5.warnings.filter(w => w.severity === 'medium')
-                    const low    = stage5.warnings.filter(w => w.severity === 'low')
-                    const hasHigh = high.length > 0
-
-                    // 全体の色味は最も重い severity に合わせる
-                    const box = hasHigh
-                      ? 'border-destructive/40 bg-destructive/5'
-                      : medium.length > 0
-                        ? 'border-amber-500/40 bg-amber-500/5'
-                        : 'border-blue-500/30 bg-blue-500/5'
-                    const titleColor = hasHigh
-                      ? 'text-destructive'
-                      : medium.length > 0 ? 'text-amber-800' : 'text-blue-800'
-                    const titleText = hasHigh
-                      ? `🔴 破壊的変更を検出 (${high.length} 件)`
-                      : medium.length > 0
-                        ? `🟡 挙動が変わる変更を検出 (${medium.length} 件)`
-                        : `🔵 軽微な変更 (${low.length} 件)`
-
-                    return (
-                      <div className={cn('rounded border p-3 space-y-2', box)}>
-                        <div className={cn('text-xs font-semibold flex items-center gap-1.5', titleColor)}>
-                          <AlertCircle className="h-3.5 w-3.5" />
-                          {titleText}
-                        </div>
-
-                        {high.length > 0 && (
-                          <div className="space-y-0.5">
-                            <div className="text-[11px] font-semibold text-destructive">🔴 HIGH — データ消失の可能性</div>
-                            <ul className="text-[11px] text-destructive space-y-0.5 ml-4 list-disc">
-                              {high.map((w, i) => <li key={i}>{w.message}</li>)}
-                            </ul>
-                          </div>
-                        )}
-
-                        {medium.length > 0 && (
-                          <div className="space-y-0.5">
-                            <div className="text-[11px] font-semibold text-amber-800">🟡 MEDIUM — 挙動が変わる変更</div>
-                            <ul className="text-[11px] text-amber-800 space-y-0.5 ml-4 list-disc">
-                              {medium.map((w, i) => <li key={i}>{w.message}</li>)}
-                            </ul>
-                          </div>
-                        )}
-
-                        {low.length > 0 && (
-                          <div className="space-y-0.5">
-                            <div className="text-[11px] font-semibold text-blue-800">🔵 LOW — 影響の小さい変更</div>
-                            <ul className="text-[11px] text-blue-800 space-y-0.5 ml-4 list-disc">
-                              {low.map((w, i) => <li key={i}>{w.message}</li>)}
-                            </ul>
-                          </div>
-                        )}
-
-                        <p className="text-[11px] mt-1">
-                          {hasHigh ? (
-                            <span className="text-destructive/80">
-                              本番にデータが入っている場合、データ消失や ALTER 失敗の可能性があります。PR を必ず人間がレビューしてください。
-                            </span>
-                          ) : medium.length > 0 ? (
-                            <span className="text-amber-700">
-                              挙動が変わる変更です。意図したものか PR で確認してください (意図的なら OK)。
-                            </span>
-                          ) : (
-                            <span className="text-blue-700">
-                              軽微な変更です。PR レビューで内容を確認してください。
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                    )
-                  })()}
-
-                  {/* Update mode: manual changes needed */}
-                  {stage5.mode === 'update' && stage5.manualChangesNeeded && stage5.manualChangesNeeded.length > 0 && (
-                    <div className="rounded border border-amber-500/40 bg-amber-500/5 p-3 space-y-1.5">
-                      <div className="text-xs font-semibold text-amber-800">
-                        🛠️ 手動対応が必要なカラム変更 ({stage5.manualChangesNeeded.length} 件)
-                      </div>
-                      <p className="text-[11px] text-amber-700">
-                        自動生成された migration SQL に TODO コメントが入っています。マージ前に SQL を編集してください。
-                      </p>
-                      <ul className="text-[11px] text-amber-700 space-y-0.5 ml-4 list-disc">
-                        {stage5.manualChangesNeeded.map((m, i) => (
-                          <li key={i}>
-                            <code className="bg-amber-500/10 px-1 rounded">{m.table}.{m.column}</code>: {m.reason}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                  {installResult && !installResult.ok && (
+                    <div className="text-[11px] text-destructive">❌ {installResult.error}</div>
                   )}
 
-                  {/* Generated artifacts */}
-                  <div className="space-y-2">
-                    {/* Production migration */}
-                    {stage5.productionMigration && (
-                      <details className="text-[11px] text-muted-foreground">
-                        <summary className="cursor-pointer hover:text-foreground flex items-center gap-1.5">
-                          <FileCode className="h-3.5 w-3.5" />
-                          {stage5.mode === 'update' ? 'ALTER migration SQL (生成済み)' : '本番用 migration SQL (CREATE TABLE)'}
-                        </summary>
-                        <pre className="mt-1.5 rounded border bg-muted/30 px-2 py-1.5 font-mono whitespace-pre overflow-x-auto max-h-60 overflow-y-auto text-[10px]">
-                          {stage5.productionMigration}
-                        </pre>
-                      </details>
-                    )}
-
-                    {/* Registry entry (initial mode のみ) */}
-                    {stage5.mode === 'initial' && stage5.registryEntry && (
-                      <details className="text-[11px] text-muted-foreground">
-                        <summary className="cursor-pointer hover:text-foreground flex items-center gap-1.5">
-                          <FileCode className="h-3.5 w-3.5" />
-                          AppHarbor registry エントリ (YAML)
-                        </summary>
-                        <pre className="mt-1.5 rounded border bg-muted/30 px-2 py-1.5 font-mono whitespace-pre overflow-x-auto">
-                          {stage5.registryEntry}
-                        </pre>
-                      </details>
-                    )}
-
-                    {/* schema.released.sql snapshot */}
-                    {stage5.schemaReleasedSnapshot && (
-                      <details className="text-[11px] text-muted-foreground">
-                        <summary className="cursor-pointer hover:text-foreground flex items-center gap-1.5">
-                          <FileCode className="h-3.5 w-3.5" />
-                          db/schema.released.sql (PR マージ後にカートリッジリポへコミット)
-                        </summary>
-                        <div className="mt-1.5 space-y-1.5">
-                          <p className="text-[11px] text-muted-foreground">
-                            PR マージ・本番適用後、このファイルをカートリッジリポの <code className="bg-muted px-1 rounded">db/schema.released.sql</code> としてコミットしてください。次回の改修時の diff 基準になります。
-                          </p>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              navigator.clipboard.writeText(stage5.schemaReleasedSnapshot)
-                              setStage5Copied('snapshot')
-                              setTimeout(() => setStage5Copied(null), 2000)
-                            }}
-                            className="gap-1.5"
-                          >
-                            <Copy className="h-3.5 w-3.5" />
-                            {stage5Copied === 'snapshot' ? 'コピー済み' : 'schema.released.sql をコピー'}
-                          </Button>
-                          <pre className="rounded border bg-muted/30 px-2 py-1.5 font-mono whitespace-pre overflow-x-auto max-h-60 overflow-y-auto text-[10px]">
-                            {stage5.schemaReleasedSnapshot}
-                          </pre>
-                        </div>
-                      </details>
-                    )}
-                  </div>
-
-                  {/* 事前チェック: ローカル型チェック */}
-                  <div className="rounded border bg-card p-3 space-y-2">
-                    <div className="text-xs font-semibold flex items-center justify-between">
-                      <span>🔍 PR 作成前にローカル型チェック (推奨)</span>
-                      {typeCheckResult?.ok && (
-                        <span className="text-emerald-600 text-[11px]">✓ エラー無し ({typeCheckResult.duration}ms)</span>
-                      )}
-                    </div>
+                  {/* マージ後の作業（schema 変更がある場合のみ） */}
+                  {((stage5.mode === 'initial' && stage5.productionMigration) ||
+                    (stage5.mode === 'update' && stage5.diff && !stage5.diff.isEmpty)) && (
                     <p className="text-[11px] text-muted-foreground">
-                      AppHarbor 本番ビルドと同じ TypeScript チェックをローカルで実行。
-                      ここで通れば PR 作成後の Vercel ビルドも通る確率が高い。
+                      マージ後: 本番 Supabase に migration を適用してください（<code className="bg-muted px-1 rounded">npx supabase db push --linked</code>）。
                     </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleTypeCheck}
-                      disabled={typeCheckBusy}
-                      className="gap-1.5"
-                    >
-                      {typeCheckBusy
-                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        : <RefreshCw className="h-3.5 w-3.5" />}
-                      {typeCheckBusy ? '型チェック中... (10-30 秒)' : '型チェックを実行'}
-                    </Button>
-                    {typeCheckResult && !typeCheckResult.ok && (
-                      <div className="rounded border border-destructive/40 bg-destructive/5 p-2 space-y-1">
-                        <div className="text-[11px] font-semibold text-destructive">
-                          ❌ {typeCheckResult.errors?.length ?? 0} 件の型エラー
-                          {typeCheckResult.error && ` — ${typeCheckResult.error}`}
-                        </div>
-                        {typeCheckResult.errors && typeCheckResult.errors.length > 0 && (
-                          <ul className="text-[10px] font-mono space-y-0.5 max-h-48 overflow-y-auto">
-                            {typeCheckResult.errors.slice(0, 20).map((e, i) => (
-                              <li key={i} className="text-destructive">
-                                <span className="text-muted-foreground">{e.file.replace(/^.*cartridges\//, 'cartridges/')}:{e.line}:{e.col}</span>{' '}
-                                <span className="font-semibold">{e.code}</span>: {e.message}
-                              </li>
-                            ))}
-                            {typeCheckResult.errors.length > 20 && (
-                              <li className="text-muted-foreground">... 残り {typeCheckResult.errors.length - 20} 件</li>
-                            )}
-                          </ul>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* AppHarbor pinned ref 更新検知バナー */}
-                  {ahStatusLoading && (
-                    <div className="rounded border border-muted p-3 flex items-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      AppHarbor の状態を確認中...
-                    </div>
-                  )}
-                  {ahStatus && !ahStatus.error && ahStatus.isPinnedTag && ahStatus.isNewer && (
-                    <div className="rounded border border-amber-500/40 bg-amber-500/5 p-3 space-y-2">
-                      <div className="text-xs font-semibold text-amber-800">
-                        更新あり: cart が pinned より {ahStatus.aheadBy != null && ahStatus.aheadBy >= 0
-                          ? `${ahStatus.aheadBy} commit 先行`
-                          : '先行'}
-                        {ahStatus.changeKind === 'schema' && '（スキーマ変更）'}
-                        {ahStatus.changeKind === 'code' && '（コードのみ）'}
-                      </div>
-
-                      {/* 新旧 比較テーブル */}
-                      <div className="grid grid-cols-[auto_1fr_1fr] gap-x-3 gap-y-1 text-[11px]">
-                        <div></div>
-                        <div className="font-medium text-amber-800">AppHarbor（現在）</div>
-                        <div className="font-medium text-amber-800">cart main（最新）</div>
-
-                        <div className="text-amber-700/70">バージョン</div>
-                        <div className="font-mono text-amber-900">{ahStatus.pinnedVersion ?? '—'}</div>
-                        <div className="font-mono text-amber-900">{ahStatus.manifestVersion ?? '—'}</div>
-
-                        <div className="text-amber-700/70">コミット</div>
-                        <div className="font-mono text-amber-900">
-                          {ahStatus.pinnedCommit ? ahStatus.pinnedCommit.slice(0, 7) : '—'}
-                          {ahStatus.pinnedRef && <span className="ml-1 text-amber-700/60">({ahStatus.pinnedRef})</span>}
-                        </div>
-                        <div className="font-mono text-amber-900">{ahStatus.cartHead ? ahStatus.cartHead.slice(0, 7) : '—'}</div>
-
-                        <div className="text-amber-700/70">日時</div>
-                        <div className="font-mono text-amber-900">{fmtCommitDate(ahStatus.pinnedCommitDate)}</div>
-                        <div className="font-mono text-amber-900">{fmtCommitDate(ahStatus.cartHeadDate)}</div>
-                      </div>
-
-                      {ahStatus.changedFiles && ahStatus.changedFiles.length > 0 && (
-                        <div className="text-[11px] text-amber-700">
-                          <span className="text-amber-700/70">変更ファイル: </span>
-                          {ahStatus.changedFiles.slice(0, 4).join(', ')}
-                          {ahStatus.changedFiles.length > 4 && ` …(計 ${ahStatus.changedFiles.length} 件)`}
-                        </div>
-                      )}
-
-                      {ahStatus.changeKind === 'schema' && !ahStatus.hasSchemaReleased && (
-                        <p className="text-[11px] text-amber-700">
-                          スキーマ変更を含みますが、<strong>db/schema.released.sql</strong> が未整備です。先にコミットしてください。
-                        </p>
-                      )}
-                      {ahStatus.changeKind === 'schema' && ahStatus.hasSchemaReleased && (
-                        <p className="text-[11px] text-amber-700">
-                          スキーマ変更を含みます。migration SQL が自動生成されます。
-                        </p>
-                      )}
-
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                          size="sm"
-                          onClick={handleBumpRef}
-                          disabled={bumpBusy || (ahStatus.changeKind === 'schema' && !ahStatus.hasSchemaReleased)}
-                          className="gap-1.5 bg-amber-600 hover:bg-amber-700"
-                        >
-                          {bumpBusy
-                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            : <ArrowRight className="h-3.5 w-3.5" />}
-                          {bumpBusy ? '更新 PR 作成中...' : '更新 PR を作成'}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={fetchAppHarborStatus}
-                          disabled={ahStatusLoading}
-                          className="gap-1.5"
-                        >
-                          <RefreshCw className={cn('h-3.5 w-3.5', ahStatusLoading && 'animate-spin')} />
-                          再チェック
-                        </Button>
-                      </div>
-                      {bumpResult?.ok && bumpResult.prUrl && (
-                        <div className="text-xs text-amber-700">
-                          <a
-                            href={bumpResult.prUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="underline hover:text-amber-900"
-                          >
-                            PR #{bumpResult.prNumber} を開く (tag: {bumpResult.newTag}) &rarr;
-                          </a>
-                        </div>
-                      )}
-                      {bumpResult && !bumpResult.ok && (
-                        <div className="text-[11px] text-destructive">
-                          {bumpResult.error}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {ahStatus && !ahStatus.error && ahStatus.isPinnedTag === false && (
-                    <div className="rounded border border-muted p-3 text-[11px] text-muted-foreground">
-                      このカートリッジは ref: main（自動反映）です。固定タグ運用に切替えると更新 PR を使えます。
-                    </div>
-                  )}
-                  {ahStatus && ahStatus.isPinnedTag && !ahStatus.isNewer && !ahStatusLoading && (
-                    <div className="rounded border border-emerald-500/20 bg-emerald-500/5 p-2 text-[11px] text-emerald-700">
-                      <Check className="inline h-3.5 w-3.5 mr-1" />
-                      AppHarbor は最新 ({ahStatus.pinnedRef})
-                    </div>
                   )}
 
-                  {/* メインアクション: AppHarbor 本番に PR を作成 */}
-                  <div className={cn(
-                    'rounded border p-3 space-y-2',
-                    stage5.mode === 'update'
-                      ? 'border-blue-500/40 bg-blue-500/5'
-                      : 'border-emerald-500/40 bg-emerald-500/5',
-                  )}>
-                    <div className={cn(
-                      'text-xs font-semibold',
-                      stage5.mode === 'update' ? 'text-blue-800' : 'text-emerald-800',
-                    )}>
-                      {stage5.mode === 'update'
-                        ? '🔄 AppHarbor 本番リポに schema 更新 PR を作成'
-                        : '🚀 AppHarbor 本番リポに自動 install PR を作成'}
-                    </div>
-                    <p className={cn(
-                      'text-[11px]',
-                      stage5.mode === 'update' ? 'text-blue-700' : 'text-emerald-700',
-                    )}>
-                      {stage5.mode === 'update'
-                        ? 'schema.sql vs schema.released.sql の差分から ALTER migration を生成し、AppHarbor リポに PR を送信します。registry は変更しません (既に登録済み)。カートリッジコードは Vercel ビルド時に GitHub から自動取得されます。'
-                        : 'クリック 1 つで以下が自動実行されます: ①カートリッジコードを AppHarbor リポにコピー ②本番用 migration SQL を追加 ③PR 作成 (あなたがレビュー → マージ → Vercel 自動デプロイ)'}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        size="sm"
-                        onClick={handleInstallToAppHarbor}
-                        disabled={installBusy || (stage5.mode === 'update' && stage5.diff?.isEmpty)}
-                        className={cn(
-                          'gap-1.5',
-                          stage5.mode === 'update'
-                            ? 'bg-blue-600 hover:bg-blue-700'
-                            : 'bg-emerald-600 hover:bg-emerald-700',
-                        )}
-                      >
-                        {installBusy
-                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          : <ArrowRight className="h-3.5 w-3.5" />}
-                        {installBusy
-                          ? 'PR 作成中...'
-                          : stage5.mode === 'update'
-                            ? '更新 PR を作成'
-                            : 'AppHarbor に PR を作成'}
-                      </Button>
-                      {installResult?.ok && installResult.prUrl && (
-                        <a
-                          href={installResult.prUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={cn(
-                            'inline-flex items-center gap-1 text-xs underline',
-                            stage5.mode === 'update'
-                              ? 'text-blue-700 hover:text-blue-900'
-                              : 'text-emerald-700 hover:text-emerald-900',
-                          )}
-                        >
-                          PR #{installResult.prNumber} を開く ({installResult.filesAdded} ファイル
-                          {installResult.schemaVersion && `, schema v${installResult.schemaVersion}`}
-                          {installResult.mode && `, mode: ${installResult.mode}`}) →
-                        </a>
-                      )}
-                      {stage5.mode === 'update' && stage5.diff?.isEmpty && (
-                        <span className="text-[11px] text-muted-foreground">
-                          差分なし: コード変更のみなら git push だけで OK
-                        </span>
-                      )}
-                    </div>
-                    {installResult && !installResult.ok && (
-                      <div className="text-[11px] text-destructive">
-                        ❌ {installResult.error}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 補助: 手動でコピーしたい場合 */}
-                  <details className="text-[11px] text-muted-foreground">
-                    <summary className="cursor-pointer hover:text-foreground">
-                      手動で進めたい場合 (生成物のコピー)
-                    </summary>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          navigator.clipboard.writeText(stage5.productionMigration)
-                          setStage5Copied('migration')
-                          setTimeout(() => setStage5Copied(null), 2000)
-                        }}
-                        disabled={!stage5.productionMigration}
-                        className="gap-1.5"
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                        {stage5Copied === 'migration' ? 'コピー済み' : 'Migration をコピー'}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          navigator.clipboard.writeText(stage5.registryEntry)
-                          setStage5Copied('registry')
-                          setTimeout(() => setStage5Copied(null), 2000)
-                        }}
-                        className="gap-1.5"
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                        {stage5Copied === 'registry' ? 'コピー済み' : 'Registry をコピー'}
-                      </Button>
-                    </div>
-                  </details>
-
-                  {/* 再チェック + 完了マーク */}
+                  {/* stage5-prepare を再取得（差分・生成物の更新） */}
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       variant="outline"
@@ -1546,39 +1057,8 @@ export function PipelineSection({ appId }: { appId: string }) {
                       className="gap-1.5"
                     >
                       <RefreshCw className={cn('h-3.5 w-3.5', stage5Loading && 'animate-spin')} />
-                      再チェック
+                      生成物を再取得
                     </Button>
-                    {stage5.allOk && !stages[5].completed && (
-                      <Button
-                        size="sm"
-                        onClick={() => markCompleted(5)}
-                        className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                        Stage 5 完了
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* PR マージ後の手順 */}
-                  <div className="rounded border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-[11px] text-blue-800 space-y-1">
-                    <div className="font-semibold">📋 PR マージ後の作業</div>
-                    {stage5.mode === 'update' ? (
-                      <ol className="list-decimal ml-4 space-y-0.5">
-                        <li>AppHarbor リポを pull: <code className="bg-blue-500/10 px-0.5 rounded">git pull</code></li>
-                        <li>本番 Supabase に migration 適用: <code className="bg-blue-500/10 px-0.5 rounded">npx supabase db push --linked</code></li>
-                        <li>動作確認 → 動いたら、カートリッジリポに <code className="bg-blue-500/10 px-0.5 rounded">db/schema.released.sql</code> をコミット (上の「snapshot」セクションからコピー)</li>
-                        <li>動かない場合: ローカルで schema.sql を直してもう一度この Stage 5 を実行</li>
-                      </ol>
-                    ) : (
-                      <ol className="list-decimal ml-4 space-y-0.5">
-                        <li>AppHarbor リポを pull: <code className="bg-blue-500/10 px-0.5 rounded">git pull</code></li>
-                        <li>本番 Supabase に migration 適用: <code className="bg-blue-500/10 px-0.5 rounded">npx supabase db push --linked</code></li>
-                        <li>Vercel が自動でコードをデプロイ (push 完了から 1-2 分)</li>
-                        <li>AppHarbor 管理画面で「インストール可能アプリ」に出現 → 「インストール」 → 組織で有効化</li>
-                        <li>動作確認できたら、次回の改修に備えてカートリッジリポに <code className="bg-blue-500/10 px-0.5 rounded">db/schema.released.sql</code> をコミット (上の snapshot セクションからコピー)</li>
-                      </ol>
-                    )}
                   </div>
                 </div>
               )}
