@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, Minus, Loader2, FolderOpen } from 'lucide-react'
 import {
@@ -9,7 +8,7 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { slugify, softSlug, isAbsolutePath } from '@/lib/slug'
 
@@ -29,6 +28,9 @@ export function Step1CreateForm() {
   const [busy, setBusy]     = useState(false)
   const [err, setErr]       = useState<string | null>(null)
   const errRef = useRef<HTMLDivElement>(null)
+  // キャンセルの遷移先（カートリッジ一覧）は git スキャンで数秒かかることがある。
+  // useTransition で「押した瞬間に pending（スピナー）」を出し、固まって見えないようにする。
+  const [isLeaving, startLeaving] = useTransition()
 
   // マウント時にサーバから既定の親フォルダを取得
   useEffect(() => {
@@ -262,13 +264,17 @@ export function Step1CreateForm() {
       )}
 
       <div className="flex justify-end gap-3">
-        <Link
-          href="/"
-          className={cn(buttonVariants({ variant: 'outline' }), busy && 'pointer-events-none opacity-50')}
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => startLeaving(() => router.push('/'))}
+          disabled={busy || isLeaving}
+          className="gap-1.5"
         >
+          {isLeaving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
           キャンセル
-        </Link>
-        <Button onClick={submit} disabled={busy || !canSubmit} className="gap-1.5">
+        </Button>
+        <Button onClick={submit} disabled={busy || !canSubmit || isLeaving} className="gap-1.5">
           {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
           {busy ? '確定中...' : 'アプリ情報を確定'}
         </Button>
