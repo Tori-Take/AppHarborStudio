@@ -229,8 +229,8 @@ export function PipelineSection({ appId }: { appId: string }) {
   }, [currentStage, fetchAppHarborStatus])
 
   /**
-   * Stage 5 完了後に「カートリッジリポに変更がないか」をチェックする。
-   * stages[5].verifiedCommit と現在の HEAD を比較して、差分があれば banner を出す。
+   * Stage 4 完了後に「カートリッジリポに変更がないか」をチェックする（ロールバック検知用）。
+   * verifiedCommit と現在の HEAD を比較して、差分があれば banner を出す。
    */
   const fetchUpdates = useCallback(async () => {
     setUpdatesLoading(true)
@@ -964,19 +964,6 @@ export function PipelineSection({ appId }: { appId: string }) {
         </div>
       )}
 
-      {/* 本番稼働中バナー (リリース状態が up-to-date のとき。改修フロー用に消さない) */}
-      {currentStage === 5 && deriveReleaseState(ahStatus, ahStatusLoading).kind === 'up-to-date' && (
-        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
-          <div className="flex items-center gap-2 text-sm text-emerald-700">
-            <Check className="h-4 w-4" />
-            <span className="font-semibold">本番稼働中</span>
-            <span className="text-xs text-emerald-600">
-              — 改修したい場合は下のパネルから「更新 PR」を作成できます
-            </span>
-          </div>
-        </div>
-      )}
-
       {/* Final stage panel (完了後も改修のため表示し続ける) */}
       {currentStage === 5 && (
         <div className="rounded-lg border bg-card p-4">
@@ -1024,7 +1011,6 @@ export function PipelineSection({ appId }: { appId: string }) {
                     details={
                       <Stage5Details
                         stage5={stage5}
-                        appId={appId}
                         typeCheckBusy={typeCheckBusy}
                         typeCheckResult={typeCheckResult}
                         onTypeCheck={handleTypeCheck}

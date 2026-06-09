@@ -44,7 +44,6 @@ type TypeCheckResult = {
 
 type Props = {
   stage5: Stage5PrepareResult
-  appId: string
   typeCheckBusy: boolean
   typeCheckResult: TypeCheckResult
   onTypeCheck: () => void
