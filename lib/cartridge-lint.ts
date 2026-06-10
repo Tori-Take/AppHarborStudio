@@ -3,7 +3,8 @@
  *
  * カートリッジ内のコードをスキャンして、規約違反の import を検出する。
  *
- * 許可: @/sdk, @/sdk/client, react, react-dom, next/*, 相対 import, 標準 module
+ * 許可: @/sdk, @/sdk/client, @appharbor/sdk, @appharbor/sdk/client,
+ *       react, react-dom, next/*, 相対 import, 標準 module
  * 禁止: @/lib/*, @/components/*, @/types/*, @/core/*, @/app/*
  *       および外部 npm パッケージのうち、Studio が許可していないもの
  */
@@ -28,6 +29,10 @@ const FORBIDDEN_AT_PREFIXES = [
 ]
 
 const ALLOWED_PACKAGES = new Set([
+  // SDK 契約パッケージ（tsconfig / webpack alias で sdk-mock に解決される）
+  '@appharbor/sdk',
+  '@appharbor/sdk/client',
+  '@appharbor/sdk/types',
   'react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime',
   // Studio が標準で同梱する peer dep（カートリッジが UI を内製する際に使う）
   'lucide-react',
