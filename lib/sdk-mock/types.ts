@@ -31,6 +31,25 @@ export type AppContext = {
   role:  string
 }
 
+/** 通知の配信スコープ（SDK 契約 NotifyScope と shape を合わせる） */
+export type NotifyScope = 'org' | 'dept' | 'user'
+
+/** notify() の入力（SDK 契約 NotifyInput と shape を合わせる） */
+export interface NotifyInput {
+  title:         string
+  body?:         string
+  link?:         string
+  scope?:        NotifyScope
+  targetDeptId?: string | null
+  targetUserId?: string | null
+  sourceAppId?:  string
+}
+
+/** notify() の戻り値（SDK 契約 NotifyResult と shape を合わせる） */
+export interface NotifyResult {
+  id: string
+}
+
 /** Studio が管理する仮ユーザー定義（テスト時にロール切替で使う） */
 export type MockUser = {
   id:           string

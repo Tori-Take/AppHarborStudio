@@ -86,6 +86,29 @@ create table if not exists apps (
   updated_at         timestamptz default now()
 );
 
+-- 通知（SDK notify() の保存先。本体の announcements に相当する Studio 版）
+create table if not exists notifications (
+  id              uuid primary key default gen_random_uuid(),
+  source_app_id   text not null,
+  organization_id uuid references organizations(id) on delete cascade,
+  scope           text not null default 'org',
+  target_dept_id  uuid,
+  target_user_id  uuid,
+  title           text not null,
+  body            text not null default '',
+  link            text,
+  created_by      uuid,
+  created_at      timestamptz not null default now()
+);
+
+-- 通知の既読管理（ユーザーごと。Studio はユーザー切替があるため通知本体と分離）
+create table if not exists notification_reads (
+  notification_id uuid references notifications(id) on delete cascade,
+  user_id         uuid not null,
+  read_at         timestamptz not null default now(),
+  primary key (notification_id, user_id)
+);
+
 create table if not exists storage.buckets (
   id                 text primary key,
   name               text,
