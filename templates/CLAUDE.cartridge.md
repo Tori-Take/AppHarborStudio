@@ -425,14 +425,17 @@ interface Item { id: string; name: string; is_active: boolean }
 ## 規約サマリ
 
 import で使えるのは:
-- `@/sdk` / `@/sdk/client` — SDK
-- `react`, `next/*` — 標準
+- `@/sdk` / `@/sdk/client` — SDK（`@appharbor/sdk` / `@appharbor/sdk/client` と書いても同じ）
+- `react` / `react-dom`, `next/*` — 標準
 - 相対 import（`./components/Foo`）
 - Node 標準
+- ホスト環境（Studio / 本体）が同梱するパッケージ:
+  `lucide-react`, `clsx`, `tailwind-merge`, `class-variance-authority`, `xlsx`, `@base-ui/react/*`
 
 使えないのは:
-- `@/lib/*`, `@/components/*`, `@/types/*` — 本体内部
-- 外部 UI ライブラリ（`lucide-react`, `tailwind-merge` 等）
+- `@/lib/*`, `@/components/*`, `@/types/*` — 本体内部（規約チェックで **error**）
+- 上記以外の npm パッケージ — ホスト環境に同梱されておらず本番ビルドで落ちる可能性
+  （規約チェックで **warn**。どうしても必要な場合は追加を相談すること）
 
 ## このカートリッジの権限ロール（初期値）
 
