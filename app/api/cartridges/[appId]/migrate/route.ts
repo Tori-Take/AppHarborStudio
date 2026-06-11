@@ -100,6 +100,28 @@ async function createSourceReader(source: MigrateSource): Promise<SourceReader> 
   }
 }
 
+/**
+ * 移行先テーブルの json / jsonb 列名を取得する。
+ *
+ * node-postgres は JS 配列パラメータを Postgres の配列リテラル ({a,b,c}) に
+ * 変換するため、jsonb 列に JSON 配列をそのまま渡すと
+ * "invalid input syntax for type json" になる。
+ * json/jsonb 列だけ事前に JSON.stringify して渡すための判定に使う。
+ * (Array.isArray での無条件 stringify は本物の text[] 等の配列列を壊すので不可)
+ */
+async function getJsonColumns(pgClient: Client, table: string): Promise<Set<string>> {
+  try {
+    const res = await pgClient.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'studio' AND table_name = $1 AND data_type IN ('json', 'jsonb')`,
+      [table],
+    )
+    return new Set(res.rows.map(r => String((r as { column_name: string }).column_name)))
+  } catch {
+    return new Set()
+  }
+}
+
 /** source から全行を取り出し、Postgres の studio スキーマに INSERT (冪等) */
 async function migrateTableData(
   source: SourceReader,
@@ -123,12 +145,22 @@ async function migrateTableData(
   const columns = Object.keys(rows[0])
   if (columns.length === 0) return result
 
+  const jsonColumns = await getJsonColumns(pgClient, table)
+
   // 1 行ずつ INSERT (簡易実装: 大量データだと遅いが正確)
   // studio スキーマ修飾で public との衝突を回避
   for (const row of rows) {
     const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ')
     const colList = columns.map(c => `"${c}"`).join(', ')
-    const values = columns.map(c => row[c])
+    const values = columns.map(c => {
+      const value = row[c]
+      // source (PGlite / pg) は json/jsonb をパース済みの JS 値で返すため、
+      // 文字列化して渡す (配列・オブジェクト・スカラーすべて同じ扱い)
+      if (jsonColumns.has(c) && value !== null && value !== undefined) {
+        return JSON.stringify(value)
+      }
+      return value
+    })
     const sql = `INSERT INTO "studio"."${table}" (${colList}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`
     try {
       const r = await pgClient.query(sql, values)

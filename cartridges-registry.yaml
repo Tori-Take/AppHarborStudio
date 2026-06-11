@@ -59,3 +59,9 @@ cartridges:
     ref: main
     mode: installed
     enabled: true
+
+  - id: monopoly
+    repo: Tori-Take/cart-monopoly
+    ref: main
+    mode: installed
+    enabled: true
