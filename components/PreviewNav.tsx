@@ -82,12 +82,14 @@ export function PreviewNav() {
       .then((r) => r.ok ? r.json() : null)
       .then((j) => {
         if (!cancelled && j?.localUrl) {
-          const fullUrl = `${j.localUrl}${window.location.pathname}?fullscreen=1`
-          fetch(`/api/studio/qr?url=${encodeURIComponent(fullUrl)}`)
+          // LAN IP のベース URL だけ案内する。
+          // 個別ゲームへの参加はアプリ内の QR コードを使う。
+          const baseUrl = `${j.localUrl}/org/studio-sandbox/apps`
+          fetch(`/api/studio/qr?url=${encodeURIComponent(baseUrl)}`)
             .then((r) => r.ok ? r.json() : null)
             .then((qrJ) => {
               if (!cancelled && qrJ?.qrDataUrl) {
-                setQr({ localUrl: fullUrl, qrDataUrl: qrJ.qrDataUrl })
+                setQr({ localUrl: j.localUrl as string, qrDataUrl: qrJ.qrDataUrl })
               }
             })
             .catch(() => {})
@@ -351,9 +353,13 @@ export function PreviewNav() {
               boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
             }}
           >
-            <p style={{ fontSize: 14, fontWeight: 500, color: '#0f172a' }}>スマホで QR コードをスキャン</p>
+            <p style={{ fontSize: 14, fontWeight: 500, color: '#0f172a' }}>WiFi 接続用 LAN アドレス</p>
             <img src={qr.qrDataUrl} alt="QR Code" width={200} height={200} />
             <span style={{ fontSize: 12, color: '#64748b', fontFamily: 'ui-monospace, monospace' }}>{qr.localUrl}</span>
+            <p style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', maxWidth: 200, margin: 0 }}>
+              スマホをこの Studio に接続するための LAN アドレスです。<br />
+              ゲームへの参加はアプリ内の QR コードを使ってください。
+            </p>
             <button
               onClick={() => setShowQr(false)}
               style={{
