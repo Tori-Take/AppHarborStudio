@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "node scripts/sync-types-if-parent-exists.js && node scripts/fetch-cartridges.js && node scripts/mount-cartridges.js",
     "dev": "node scripts/dev-supervisor.js",
-    "dev:raw": "next dev --webpack -p 3200",
+    "dev:raw": "next dev --webpack -p 3200 -H 0.0.0.0",
     "prebuild": "node scripts/sync-types-if-parent-exists.js && node scripts/fetch-cartridges.js && node scripts/mount-cartridges.js",
     "mount": "node scripts/mount-cartridges.js",
     "cart:fetch": "node scripts/fetch-cartridges.js",
