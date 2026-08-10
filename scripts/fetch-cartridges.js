@@ -106,6 +106,7 @@ function main() {
   }
 
   let installed = 0
+  const failed = []
   for (const c of targets) {
     if (c.mode === 'local') {
       log(`📂 ${c.id} (local: ${c.path}) — スキップ`)
@@ -124,10 +125,33 @@ function main() {
       installed++
     } catch (e) {
       log(`❌ ${c.id} の clone 失敗: ${e.message}`)
+      failed.push(c.id)
     }
   }
 
   log(`✅ ${installed} カートリッジ取得完了`)
+
+  if (failed.length === 0) return
+
+  // clone 失敗を握りつぶすと「デプロイは成功したのにカートリッジが 0 個の
+  // Studio が公開される」という気づきにくい壊れ方をする。
+  // ビルド / CI では止め、ローカル開発では警告だけ出して続行する。
+  const event  = process.env.npm_lifecycle_event ?? ''
+  const strict =
+    !!process.env.VERCEL ||
+    !['', '0', 'false'].includes(String(process.env.CI ?? '')) ||
+    event.includes('build')
+
+  log(`❌ 取得できなかったカートリッジ: ${failed.join(', ')}`)
+  log(process.env.GITHUB_TOKEN
+    ? '   GITHUB_TOKEN の期限切れ / 権限不足の可能性 (classic PAT の repo スコープが必要)'
+    : '   GITHUB_TOKEN が未設定です。private リポは認証なしでは clone できません')
+
+  if (strict) {
+    log('   → ビルドを中止します。GITHUB_TOKEN を更新してから再デプロイしてください')
+    process.exit(1)
+  }
+  log('   → 開発モードのため続行します（上記カートリッジは Studio に表示されません）')
 }
 
 main()
