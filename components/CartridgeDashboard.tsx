@@ -22,6 +22,7 @@ import { ResetCartridgeButton } from '@/components/ResetCartridgeButton'
 import { JustCreatedBanner } from '@/components/JustCreatedBanner'
 import { PipelineSection } from '@/components/PipelineSection'
 import { DbSourceToggle } from '@/components/DbSourceToggle'
+import { StrictModeToggle } from '@/components/StrictModeToggle'
 
 /* ── Types ──────────────────────────────────────────── */
 
@@ -437,6 +438,11 @@ function DbSection({ c }: { c: CartridgeData }) {
       <CardContent className="space-y-4">
         {/* DB Source Toggle */}
         <DbSourceToggle appId={c.id} />
+
+        {/* Strict Mode (RLS) Toggle */}
+        <div className="border-t pt-4">
+          <StrictModeToggle appId={c.id} />
+        </div>
 
         {/* Reset */}
         <div className="border-t pt-4">
