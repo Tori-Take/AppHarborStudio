@@ -22,7 +22,10 @@
  * 戻り値は実 supabase-js と同じ shape: { data, error, count? }
  */
 
-import { getReadyPg } from './pg'
+import { getReadyPg, getPg } from './pg'
+import { pushQueryLog } from './query-log'
+import { getCurrentMockUserServer } from './server-context'
+import { resolveCurrentRlsMode } from './rls-mode'
 
 type Row = Record<string, unknown>
 type MockError = { message: string }
@@ -99,6 +102,51 @@ function parseColumns(spec: string): ParsedColumns {
 
 function quoteIdent(s: string): string {
   return `"${s.replace(/"/g, '""')}"`
+}
+
+/**
+ * RLS 厳格モードに応じてクエリを実行する。
+ *
+ * - off（既定）: 従来どおり getReadyPg() 経由（superuser 接続。RLS ポリシーは素通り）
+ * - strict     : authenticated ロールへ一時的に SET LOCAL ROLE し、Studio で現在
+ *                選択中の仮ユーザーを request.user_id に設定してから実行する。
+ *                schema.sql の RLS ポリシー（auth.uid() 経由）が実際に評価される。
+ *                トランザクション内の SET LOCAL は commit/rollback で自動的に戻るため、
+ *                他のリクエストへ role が漏れる心配はない（PGlite の transaction() は
+ *                実行中ほかのクエリを割り込ませない）。
+ */
+async function runQuery<T = Row>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> {
+  const mode = await resolveCurrentRlsMode()
+  if (mode !== 'strict') {
+    const db = await getReadyPg()
+    return db.query<T>(sql, params)
+  }
+
+  const user = await getCurrentMockUserServer()
+  const h = getPg()
+  await h.ready
+  const t0 = Date.now()
+  try {
+    const res = await h.db.transaction(async (tx) => {
+      // db-base.sql がセッション全体に `row_security = off` を敷いている
+      // （superuser 接続では通常無関係だが、authenticated ロールに切り替えた
+      // 瞬間に効いてしまい "row_security is off" エラーになるため、
+      // このトランザクション内だけ明示的に on へ戻す）
+      await tx.query(`set local row_security = on`)
+      await tx.query(`set local role authenticated`)
+      await tx.query(`select set_config('request.user_id', $1, true)`, [user.id])
+      return await tx.query<T>(sql, params)
+    })
+    pushQueryLog({ sql, params, rowCount: res.rows.length, ms: Date.now() - t0, source: 'strict' })
+    return res
+  } catch (e) {
+    pushQueryLog({
+      sql, params, ms: Date.now() - t0,
+      error: e instanceof Error ? e.message : String(e),
+      source: 'strict',
+    })
+    throw e
+  }
 }
 
 /**
@@ -266,7 +314,6 @@ class QueryBuilder {
 
   private async execute(): Promise<QueryResult> {
     try {
-      const db = await getReadyPg()
       switch (this.op) {
         case 'insert':
         case 'upsert': {
@@ -288,36 +335,36 @@ class QueryBuilder {
             sql += ` on conflict (${conflictCols}) do update set ${updates}`
           }
           sql += ' returning *'
-          const res = await db.query(sql, params)
-          return { data: normalizeDates(res.rows as Row[]), error: null, count: res.rows.length }
+          const res = await runQuery<Row>(sql, params)
+          return { data: normalizeDates(res.rows), error: null, count: res.rows.length }
         }
         case 'select': {
           const parsed = parseColumns(this.columns)
           // JOIN がある場合は JOIN クエリを組み立て、行を後処理でネストする
           if (parsed.joins.length > 0) {
-            return await this.executeWithJoins(db, parsed)
+            return await this.executeWithJoins(parsed)
           }
           const params: unknown[] = []
           const where = this.buildWhere(params)
           // count + head
           if (this.opts.head && this.opts.count) {
             const csql = `select count(*)::int as c from ${quoteIdent(this.table)}${where}`
-            const r = await db.query(csql, params)
-            const c = Number((r.rows[0] as { c: number }).c)
+            const r = await runQuery<{ c: number }>(csql, params)
+            const c = Number(r.rows[0].c)
             return { data: null, error: null, count: c }
           }
           const colsSql = this.columns === '*'
             ? '*'
             : parsed.scalars.map(quoteIdent).join(', ')
           const sql = `select ${colsSql} from ${quoteIdent(this.table)}${where}${this.buildOrderLimit()}`
-          const res = await db.query(sql, params)
+          const res = await runQuery<Row>(sql, params)
           let count: number | null = res.rows.length
           if (this.opts.count) {
             const csql = `select count(*)::int as c from ${quoteIdent(this.table)}${where}`
-            const r = await db.query(csql, params)
-            count = Number((r.rows[0] as { c: number }).c)
+            const r = await runQuery<{ c: number }>(csql, params)
+            count = Number(r.rows[0].c)
           }
-          return { data: normalizeDates(res.rows as Row[]), error: null, count }
+          return { data: normalizeDates(res.rows), error: null, count }
         }
         case 'update': {
           const params: unknown[] = []
@@ -327,14 +374,14 @@ class QueryBuilder {
           }).join(', ')
           const where = this.buildWhere(params)
           const sql = `update ${quoteIdent(this.table)} set ${sets}${where}`
-          await db.query(sql, params)
+          await runQuery(sql, params)
           return { data: null, error: null, count: null }
         }
         case 'delete': {
           const params: unknown[] = []
           const where = this.buildWhere(params)
           const sql = `delete from ${quoteIdent(this.table)}${where}`
-          await db.query(sql, params)
+          await runQuery(sql, params)
           return { data: null, error: null, count: null }
         }
       }
@@ -352,7 +399,6 @@ class QueryBuilder {
    * 解決: PostgreSQL 情報スキーマから FK を引き、生成した SQL で LEFT/INNER JOIN。
    */
   private async executeWithJoins(
-    db: Awaited<ReturnType<typeof getReadyPg>>,
     parsed: ParsedColumns,
   ): Promise<QueryResult> {
     const params: unknown[] = []
@@ -374,7 +420,7 @@ class QueryBuilder {
       const alias = `j${i}`
       // FK 名指定 (`!fkName`) は無視して、両者の関係を情報スキーマから推論する。
       // 子テーブル → 親テーブル の最初の FK を使う。
-      const fkInfo = await db.query<{
+      const fkInfo = await runQuery<{
         local_col:   string
         foreign_col: string
         side:        'child_to_parent' | 'parent_to_child'
@@ -426,7 +472,7 @@ class QueryBuilder {
                  from ${quoteIdent(this.table)} as ${quoteIdent(baseAlias)}
                  ${joinClauses.join(' ')}
                  ${where}${orderLimit}`
-    const res = await db.query(sql, params)
+    const res = await runQuery<Row>(sql, params)
     // 後処理: __s_X / __jN_Y を { col: ..., joinedTable: { col: ... } } に再構築
     const out: Row[] = []
     for (const raw of res.rows as Row[]) {
