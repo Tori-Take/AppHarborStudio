@@ -22,7 +22,7 @@
  * 戻り値は実 supabase-js と同じ shape: { data, error, count? }
  */
 
-import { getReadyPg, getPg } from './pg'
+import { getReadyPg, queryAsUser } from './pg'
 import { pushQueryLog } from './query-log'
 import { getCurrentMockUserServer } from './server-context'
 import { resolveCurrentRlsMode } from './rls-mode'
@@ -123,20 +123,9 @@ async function runQuery<T = Row>(sql: string, params?: unknown[]): Promise<{ row
   }
 
   const user = await getCurrentMockUserServer()
-  const h = getPg()
-  await h.ready
   const t0 = Date.now()
   try {
-    const res = await h.db.transaction(async (tx) => {
-      // db-base.sql がセッション全体に `row_security = off` を敷いている
-      // （superuser 接続では通常無関係だが、authenticated ロールに切り替えた
-      // 瞬間に効いてしまい "row_security is off" エラーになるため、
-      // このトランザクション内だけ明示的に on へ戻す）
-      await tx.query(`set local row_security = on`)
-      await tx.query(`set local role authenticated`)
-      await tx.query(`select set_config('request.user_id', $1, true)`, [user.id])
-      return await tx.query<T>(sql, params)
-    })
+    const res = await queryAsUser<T>(sql, params, user.id)
     pushQueryLog({ sql, params, rowCount: res.rows.length, ms: Date.now() - t0, source: 'strict' })
     return res
   } catch (e) {
