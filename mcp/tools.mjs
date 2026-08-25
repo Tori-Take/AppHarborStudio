@@ -15,6 +15,17 @@ export async function listCartridges() {
   return studioFetch('/api/cartridges')
 }
 
+/**
+ * cartridges/ → app/org/[slug]/apps/ への展開（マウント）をやり直す。
+ *
+ * 新規にスキャフォールドしたカートリッジは、Studio 起動後に追加した場合
+ * まだマウントされていないため render が 404 になる。その場合これを呼ぶ。
+ * 既存カートリッジの更新は auto-sync が自動で拾うので、通常は呼ばなくてよい。
+ */
+export async function mount() {
+  return studioFetch('/api/mount', { method: 'POST' })
+}
+
 export async function getRules({ id }) {
   return studioFetch(`/api/cartridges/${encodeURIComponent(id)}/ai-context`)
 }

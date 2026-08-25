@@ -48,6 +48,15 @@ server.registerTool('list_cartridges', {
   inputSchema: {},
 }, wrap(tools.listCartridges))
 
+server.registerTool('mount', {
+  description:
+    'カートリッジのマウント（cartridges/ → app/org/[slug]/apps/ への展開）をやり直す。' +
+    '新規にスキャフォールドしたカートリッジを Studio 起動後に追加した直後は、まだ ' +
+    'マウントされておらず render が 404 を返す。その場合これを呼んでから render し直すこと。' +
+    '既存カートリッジのコード更新は自動で反映されるので、通常は呼ばなくてよい。',
+  inputSchema: {},
+}, wrap(tools.mount))
+
 server.registerTool('get_rules', {
   description:
     '指定カートリッジの SDK 契約（型・関数シグネチャ）、AppHarbor の規約、このカートリッジ固有の ' +
