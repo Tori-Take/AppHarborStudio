@@ -9,7 +9,12 @@
 -- 注意: SQL 言語の関数は CREATE 時に本体の依存解決を行うため、
 --       「先にテーブル → 後で関数」の順序で書く必要がある。
 
--- Studio は service-role 相当の admin client しか使わないため RLS は無効化する
+-- Studio は既定で superuser 接続のため、この設定自体は素通り（bypass）に
+-- 影響しない（superuser は row_security の値によらず常に RLS を bypass する）。
+-- 厳格モード（authenticated ロールへ切り替える。db-base.sql 末尾の GRANT 節と
+-- lib/sdk-mock/supabase-mock.ts の runQuery を参照）では、この設定のままだと
+-- 「row_security is off」エラーになるため、対象トランザクション内で明示的に
+-- `set local row_security = on;` して上書きする。
 set row_security = off;
 
 -- PGlite は pgcrypto 不要（PG13+ の標準 gen_random_uuid を使う）
@@ -162,6 +167,26 @@ begin
   return new;
 end;
 $$;
+
+-- ============================================================
+-- 権限（RLS 厳格モード用）
+--
+-- Studio は既定で superuser 相当で接続するため、上の `row_security = off`
+-- とは無関係に RLS ポリシーは常に素通りする（superuser は row_security の
+-- 設定によらず RLS を bypass する）。
+--
+-- 厳格モード（lib/sdk-mock/rls-mode.ts）では、対象クエリだけ一時的に
+-- `SET LOCAL ROLE authenticated` して実行し、schema.sql の RLS ポリシーを
+-- 実際に評価させる（lib/sdk-mock/supabase-mock.ts の runQuery 参照）。
+-- authenticated は superuser ではないため、その間だけ RLS が効く。
+-- そのために全テーブルへの通常権限を用意しておく（テーブルの可視性・行の
+-- 絞り込みはロール権限ではなく RLS ポリシーが最終的に担う）。
+-- ============================================================
+grant usage on schema public, auth, storage to authenticated;
+grant all on all tables in schema public to authenticated;
+grant all on all tables in schema storage to authenticated;
+-- 後から適用されるカートリッジの schema.sql が作るテーブルにも自動で及ぶように
+alter default privileges in schema public grant all on tables to authenticated;
 
 -- ============================================================
 -- seed: 仮組織・仮ユーザー

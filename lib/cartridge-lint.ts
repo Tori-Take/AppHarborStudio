@@ -54,6 +54,10 @@ const NODE_BUILTINS = new Set([
   'os', 'http', 'https', 'querystring', 'zlib',
 ])
 
+// dataAccess: 'scoped'（省略時の既定）のカートリッジでは禁止。'privileged' のみ許可。
+// 本体 lib/cartridge/validator.ts の同名チェックと揃える（Step 3 で共通コード化予定）。
+const ADMIN_SUPABASE_CALL = /\bgetAdminSupabase\s*\(/
+
 export type LintIssue = {
   file:     string
   line:     number
@@ -66,6 +70,16 @@ export function lintCartridge(cartridgeDir: string): { issues: LintIssue[]; file
   const issues: LintIssue[] = []
   let filesScanned = 0
   let usesBackButton = false
+
+  // dataAccess はコード走査より先に読む（scanFile が isPrivileged を参照するため）
+  let isPrivileged = false
+  const manifestPathForScan = join(cartridgeDir, 'manifest.json')
+  if (existsSync(manifestPathForScan)) {
+    try {
+      const m = JSON.parse(readFileSync(manifestPathForScan, 'utf-8'))
+      isPrivileged = m?.dataAccess === 'privileged'
+    } catch { /* manifest パースエラーは validator 側で扱う */ }
+  }
 
   function scan(dir: string) {
     if (!existsSync(dir)) return
@@ -93,6 +107,16 @@ export function lintCartridge(cartridgeDir: string): { issues: LintIssue[]; file
         const spec = m[1]
         const v = classify(spec)
         if (v) issues.push({ file: rel, line: i + 1, spec, ...v })
+      }
+      if (!isPrivileged && ADMIN_SUPABASE_CALL.test(line)) {
+        issues.push({
+          file: rel, line: i + 1, spec: 'getAdminSupabase()',
+          severity: 'error',
+          message:
+            'getAdminSupabase は manifest.dataAccess が "privileged" のカートリッジでのみ使用できます' +
+            '（このカートリッジは未指定 = "scoped"）。組織の壁を通る createServerSupabase に置き換えるか、' +
+            '社内・信頼済み作者であれば manifest.json に "dataAccess": "privileged" を明記してください。',
+        })
       }
     }
   }
