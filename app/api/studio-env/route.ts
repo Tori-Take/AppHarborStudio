@@ -5,8 +5,18 @@ import { resolve } from 'path'
 import QRCode from 'qrcode'
 import { resolveCartridgesPath } from '@/lib/config'
 
+const VIRTUAL_IF = /vethernet|virtual|wsl|hyper.v|vmware|virtualbox|docker|loopback|tunnel|teredo|isatap/i
+
 function getLocalIp(): string | null {
   const nets = networkInterfaces()
+  // WiFi / Ethernet を優先し、仮想アダプター (WSL2, Hyper-V 等) はスキップ
+  for (const [name, addrs] of Object.entries(nets)) {
+    if (!addrs || VIRTUAL_IF.test(name)) continue
+    for (const a of addrs) {
+      if (a.family === 'IPv4' && !a.internal) return a.address
+    }
+  }
+  // フォールバック: 仮想を含めた最初の非ループバック IP
   for (const addrs of Object.values(nets)) {
     if (!addrs) continue
     for (const a of addrs) {

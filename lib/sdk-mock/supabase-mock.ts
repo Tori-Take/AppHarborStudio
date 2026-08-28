@@ -608,7 +608,6 @@ export async function getSupabaseForCurrentCartridge(): Promise<SupabaseClientMo
   const { resolveCurrentDbSource, getCurrentCartridgeId } = require('./db-source') as typeof import('./db-source')
   const appId  = await getCurrentCartridgeId()
   const source = await resolveCurrentDbSource()
-  console.log(`[supabase-mock] resolve: appId=${appId} source=${source}`)
 
   if (source === 'pglite') {
     if (!_client) _client = new SupabaseClientMock()
@@ -620,7 +619,6 @@ export async function getSupabaseForCurrentCartridge(): Promise<SupabaseClientMo
   const target = source === 'docker' ? 'docker' : 'studio-cloud'
   const real = getRealSupabaseAdminFor(target)
   if (real) {
-    console.log(`[supabase-mock] using ${target} client`)
     return real as SupabaseClientMock
   }
 

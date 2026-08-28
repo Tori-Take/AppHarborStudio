@@ -1,9 +1,29 @@
 import type { NextConfig } from 'next'
 import path from 'node:path'
+import { networkInterfaces } from 'node:os'
+
+// スマホ実機テスト用: 起動時に全 LAN IPv4 を自動検出して許可する。
+// Next.js 16 は未許可オリジンからのアクセスでクライアント JS が起動しない。
+// IP が変わっても Studio 再起動で自動追従するため手動編集は不要。
+const VIRTUAL_IF = /vethernet|virtual|wsl|hyper.v|vmware|virtualbox|docker|loopback|tunnel|teredo|isatap/i
+
+function getLanIps(): string[] {
+  const result: string[] = []
+  const nets = networkInterfaces()
+  // 仮想アダプター (WSL2, Hyper-V 等) を除外して実 LAN IP のみ収集
+  for (const [name, addrs] of Object.entries(nets)) {
+    if (!addrs || VIRTUAL_IF.test(name)) continue
+    for (const a of addrs) {
+      if (a.family === 'IPv4' && !a.internal) result.push(a.address)
+    }
+  }
+  return result
+}
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   typescript: { ignoreBuildErrors: true },
+  allowedDevOrigins: getLanIps(),
   // PGlite は WASM + worker を使うため、Next.js webpack でバンドルさせず
   // Node.js のネイティブ require として扱う。
   serverExternalPackages: ['@electric-sql/pglite'],
