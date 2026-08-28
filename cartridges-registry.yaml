@@ -65,3 +65,9 @@ cartridges:
     ref: main
     mode: installed
     enabled: true
+
+  - id: degree-360-feedback
+    repo: Tori-Take/cart-degree-360-feedback
+    ref: main
+    mode: installed
+    enabled: true
