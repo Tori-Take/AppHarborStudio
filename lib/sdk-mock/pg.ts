@@ -210,3 +210,31 @@ export async function getReadyPg(): Promise<PGlite> {
   await h.ready
   return wrapWithLog(h.db)
 }
+
+/**
+ * 指定ユーザーとして authenticated ロールでクエリを実行する（厳格モード / RLS 検証用）。
+ *
+ * db-base.sql がセッション全体に `row_security = off` を敷いている
+ * （superuser 接続では通常無関係だが、authenticated ロールに切り替えた瞬間に
+ * 効いてしまい "row_security is off" エラーになるため、このトランザクション内
+ * だけ明示的に on へ戻す）。トランザクション内の SET LOCAL は commit/rollback で
+ * 自動的に戻るため、他の呼び出しへ role が漏れる心配はない
+ * （PGlite の transaction() は実行中ほかのクエリを割り込ませない）。
+ *
+ * 呼び出し元: supabase-mock.ts の runQuery（厳格モード時）、
+ *            /api/db/query（asUserId 指定時、AI が SQL で直接 RLS を検証する用途）
+ */
+export async function queryAsUser<T = Record<string, unknown>>(
+  sql: string,
+  params: unknown[] | undefined,
+  userId: string,
+): Promise<{ rows: T[] }> {
+  const h = getPg()
+  await h.ready
+  return h.db.transaction(async (tx) => {
+    await tx.query(`set local row_security = on`)
+    await tx.query(`set local role authenticated`)
+    await tx.query(`select set_config('request.user_id', $1, true)`, [userId])
+    return await tx.query<T>(sql, params)
+  })
+}

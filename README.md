@@ -107,6 +107,20 @@ Studio は AppHarbor 内で常時動作している前提。**ターミナルを
 | **⬇ .appcart.json** | 配布用バンドルを出力 |
 | **🔐 アプリ権限パネル** | ユーザー別ロール割当て・切替 |
 
+## AI から Studio を操作する（MCP）
+
+Studio 起動中（`npm run dev`）に別ターミナルで `npm run mcp` を実行すると、
+Claude Code 等の AI エージェントが stdio 経由で Studio を直接操作できる
+（カートリッジ一覧・規約チェック・仮DBリセット/シード投入/SQL実行・厳格モード切替・
+画面レンダー確認・クエリログ取得・振り返りプロンプト取得・本番PR準備）。
+Claude Code 側の MCP 設定に `node mcp/server.mjs`（cwd をこのフォルダに）を登録する。
+
+- ローカル限定（`STUDIO_BASE_URL` は既定 `http://localhost:3200`。npm run dev の実ポート）
+- 仮DB（PGlite）にしか触れない。本番 Supabase の鍵はここから参照しない
+- `publish` ツールは `confirm:true` でも PR 作成まで。マージは常に人が GitHub 上で行う
+
+詳細: `docs/plan-cartridge-pipeline-redesign.md`（本体リポジトリ）Step 1-C。
+
 ## 上級フロー: 別 PC で開発できるよう Studio を配布する
 
 カートリッジ開発キットを他人に渡して別 PC で開発してもらう場合の手順。

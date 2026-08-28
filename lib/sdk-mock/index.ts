@@ -19,6 +19,10 @@ import type { AppContext, OrgActor, OrgRole } from './types'
 export type { OrgActor, OrgActor as Actor, AppContext } from './types'
 export type { OrgRole, MockUser, MockOrg } from './types'
 
+// 通知（本体 lib/sdk/notify.ts と同じ契約。Studio は PGlite の notifications へ保存）
+export { notify } from './notify'
+export type { NotifyInput, NotifyResult, NotifyScope } from './types'
+
 const synthesizeActor = async (): Promise<OrgActor> => {
   const u = await getCurrentMockUserServer()
   const o = getMockOrgServer()

@@ -16,11 +16,12 @@
     "sync-types": "node scripts/sync-types.js",
     "verify-standalone": "node scripts/check-no-parent-imports.js",
     "init-project": "node scripts/init-project.js",
+    "mcp": "node mcp/server.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@appharbor/sdk": "github:Tori-Take/appharbor-sdk#v0.4.0",
+    "@appharbor/sdk": "github:Tori-Take/appharbor-sdk#v0.5.3",
     "@base-ui/react": "^1.4.1",
     "@electric-sql/pglite": "^0.4.5",
     "@supabase/supabase-js": "^2.105.4",
@@ -40,6 +41,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@tailwindcss/postcss": "^4.2.4",
     "@types/node": "^20",
     "@types/pg": "^8.20.0",
@@ -51,6 +53,7 @@
     "eslint-plugin-unused-imports": "^4.4.1",
     "tailwindcss": "^4.2.4",
     "typescript": "^6",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "zod": "^4.4.1"
   }
 }
